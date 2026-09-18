@@ -1,20 +1,20 @@
-# ros_gz_project_template
-A template project integrating ROS 2 and Gazebo simulator.
+# my_arm_with_ball
+A ROS 2 and Gazebo project for developing an apple pick-and-place system.
 
 ## Included packages
 
-* `ros_gz_example_description` - holds the sdf description of the simulated system and any other assets.
+* `my_arm_with_ball_description` - holds SDF descriptions and simulation assets.
 
-* `ros_gz_example_gazebo` - holds gazebo specific code and configurations. Namely this is where systems end up.
+* `my_arm_with_ball_gazebo` - holds Gazebo worlds and Gazebo-specific systems.
 
-* `ros_gz_example_application` - holds ros2 specific code and configurations.
+* `my_arm_with_ball_application` - holds ROS 2 application nodes.
 
-* `ros_gz_example_bringup` - holds launch files and high level utilities.
+* `my_arm_with_ball_bringup` - holds launch files and bridge configuration.
 
 
 ## Install
 
-For using the template with Gazebo Fortress switch to the `fortress` branch of this repository, otherwise use the default branch `main` for Gazebo Harmonic onwards.
+The project currently targets the ROS 2 and Gazebo combination installed in the development workspace. For other combinations, follow the official [ROS–Gazebo installation guide](https://gazebosim.org/docs/latest/ros_installation).
 
 ### Requirements
 
@@ -33,27 +33,12 @@ For using the template with Gazebo Fortress switch to the `fortress` branch of t
     sudo apt install python3-vcstool python3-colcon-common-extensions git wget
     ```
 
-### Use as template
-
-Directly `Use this template` and create your project repository on Github.
-
-Or start by creating a workspace.
-
-   ```bash
-   mkdir -p ~/template_ws/src
-   cd ~/template_ws
-   git clone https://github.com/gazebosim/ros_gz_project_template.git
-   ```
-
-Note: Only for Gazebo Fortress, you can also use VCS to import `ros_gz_project_template` as well as the dependencies that must be built from source.
-   `vcs import --input https://raw.githubusercontent.com/gazebosim/ros_gz_project_template/main/template_workspace.yaml src`
-
 ## Usage
 
 1. Install dependencies
 
     ```bash
-    cd ~/template_ws
+    cd /path/to/my_arm_with_ball
     source /opt/ros/$ROS_DISTRO/setup.bash
     sudo rosdep init
     rosdep update
@@ -75,7 +60,7 @@ Note: Only for Gazebo Fortress, you can also use VCS to import `ros_gz_project_t
 1. Launch the simulation
 
     ```bash
-    ros2 launch ros_gz_example_bringup diff_drive.launch.py
+    ros2 launch my_arm_with_ball_bringup simulation.launch.py
     ```
 
-For a more detailed guide on using this template see [documentation](https://gazebosim.org/docs/latest/ros_gz_project_template_guide).
+The initial world contains only a ground plane and verifies the Gazebo, ROS 2, bridge, and RViz2 connection. The `BasicSystem` and `FullSystem` sources in `my_arm_with_ball_gazebo` are retained as the official template's Gazebo system scaffold; they will be replaced or extended when robot-specific simulation behavior is added.

@@ -26,6 +26,11 @@
 *.a
 *.lib
 
+# ROS 2 build artifacts
+build/
+install/
+log/
+
 # Executables
 *.exe
 *.out
