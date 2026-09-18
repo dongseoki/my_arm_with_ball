@@ -76,3 +76,11 @@ colcon build --packages-select my_arm_with_ball_gazebo --symlink-install
 source install/setup.bash
 ros2 launch my_arm_with_ball_bringup simulation.launch.py
 ```
+
+# gazebo 로봇팔 테스트 명령어
+```위아래로 고개 흔들기
+dslee@dslee-To-Be-Filled-By-O-E-M:~/workspace/my_arm_with_ball$ gz topic -t /model/panda/joint/panda_joint6/0/cmd_pos   -m gz.msgs.Double   -p 'data: -2'
+
+```
+## 각 조인트 위치 참고
+https://chatgpt.com/share/6aad354b-b584-83ee-bf4e-08efa79133ac
