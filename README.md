@@ -69,3 +69,10 @@ rm -rf build install log
     ```
 
 The initial world contains only a ground plane and verifies the Gazebo, ROS 2, bridge, and RViz2 connection. The `BasicSystem` and `FullSystem` sources in `my_arm_with_ball_gazebo` are retained as the official template's Gazebo system scaffold; they will be replaced or extended when robot-specific simulation behavior is added.
+
+# sdf만 수정한경우
+```sh
+colcon build --packages-select my_arm_with_ball_gazebo --symlink-install
+source install/setup.bash
+ros2 launch my_arm_with_ball_bringup simulation.launch.py
+```
