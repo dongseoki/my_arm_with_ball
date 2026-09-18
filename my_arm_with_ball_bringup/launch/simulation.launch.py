@@ -34,6 +34,13 @@ def generate_launch_description():
         output="screen",
     )
 
+    keyboard = Node(
+        package="my_arm_with_ball_application",
+        executable="keyboard_joint_teleop",
+        condition=IfCondition(LaunchConfiguration("keyboard")),
+        output="screen",
+    )
+
     rviz = Node(
         package="rviz2",
         executable="rviz2",
@@ -46,8 +53,17 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "rviz", default_value="true", description="Open RViz2."
             ),
+            DeclareLaunchArgument(
+                "keyboard",
+                default_value="false",
+                description=(
+                    "Enable keyboard control when launch has an interactive "
+                    "terminal."
+                ),
+            ),
             gazebo,
             bridge,
+            keyboard,
             rviz,
         ]
     )

@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.5)
 project(my_arm_with_ball_bringup)
 
 find_package(ament_cmake REQUIRED)
+find_package(my_arm_with_ball_application REQUIRED)
 find_package(my_arm_with_ball_description REQUIRED)
 find_package(my_arm_with_ball_gazebo REQUIRED)
 

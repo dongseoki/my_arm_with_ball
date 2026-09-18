@@ -68,7 +68,55 @@ rm -rf build install log
     ros2 launch my_arm_with_ball_bringup simulation.launch.py
     ```
 
-The initial world contains only a ground plane and verifies the Gazebo, ROS 2, bridge, and RViz2 connection. The `BasicSystem` and `FullSystem` sources in `my_arm_with_ball_gazebo` are retained as the official template's Gazebo system scaffold; they will be replaced or extended when robot-specific simulation behavior is added.
+The launch file starts Gazebo, the ROS-Gazebo bridge, and RViz2. Keyboard
+teleoperation is disabled by default because it requires a dedicated
+interactive terminal:
+
+```bash
+ros2 launch my_arm_with_ball_bringup simulation.launch.py rviz:=false
+```
+
+## Panda keyboard control
+
+In a second terminal, run the keyboard node after the simulation is started:
+
+```bash
+source /opt/ros/$ROS_DISTRO/setup.bash
+source install/setup.bash
+ros2 run my_arm_with_ball_application keyboard_joint_teleop
+```
+
+The keyboard node uses its own terminal. Select a joint with the number keys,
+then change its target position in 0.05 rad increments:
+
+| Key | Action |
+| --- | --- |
+| `1` ... `7` | Select Panda joint 1 ... 7 |
+| `a` | Decrease the selected joint target by 0.05 rad |
+| `d` | Increase the selected joint target by 0.05 rad |
+| `r` | Reset the selected joint to its initial target |
+| `x` | Reset all seven joints |
+| `q` | Quit the keyboard node |
+
+The node clamps commands to the Panda joint limits and publishes
+`std_msgs/msg/Float64` on `/panda_jointN/cmd_pos`. The bridge forwards each
+topic to the corresponding Gazebo command topic:
+
+```bash
+ros2 topic echo /panda_joint6/cmd_pos
+gz topic -e -t /model/panda/joint/panda_joint6/0/cmd_pos
+```
+
+If the keyboard node reports that it requires an interactive terminal, start
+it separately from a terminal after launching the simulation:
+
+```bash
+ros2 run my_arm_with_ball_application keyboard_joint_teleop
+```
+
+The `BasicSystem` and `FullSystem` sources in `my_arm_with_ball_gazebo` remain
+template Gazebo system scaffolds; keyboard control does not require either
+plugin.
 
 # sdf만 수정한경우
 ```sh

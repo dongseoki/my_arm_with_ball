@@ -13,6 +13,7 @@
 
   <depend>ros_gz</depend>
   <depend>sdformat_urdf</depend>
+  <depend>my_arm_with_ball_application</depend>
   <depend>my_arm_with_ball_description</depend>
   <depend>my_arm_with_ball_gazebo</depend>
 
