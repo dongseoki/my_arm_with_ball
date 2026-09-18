@@ -63,6 +63,11 @@
             <pose>0 0 0 0 0 0</pose>
         </include>
 
+        <joint name="panda_base_fixed_joint" type="fixed">
+            <parent>world</parent>
+            <child>panda::panda_link0</child>
+        </joint>
+
         <include>
             <uri>
             https://fuel.gazebosim.org/1.0/OpenRobotics/models/RoboCup SPL Ball
