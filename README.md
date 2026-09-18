@@ -42,8 +42,13 @@ The project currently targets the ROS 2 and Gazebo combination installed in the 
     source /opt/ros/$ROS_DISTRO/setup.bash
     sudo rosdep init
     rosdep update
-    rosdep install --from-paths src --ignore-src -i -y
+    rosdep install --from-paths . --ignore-src -r -y
     ```
+
+1-1. remove old files
+```
+rm -rf build install log
+```
 
 1. Build the project
 
