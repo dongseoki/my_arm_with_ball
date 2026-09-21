@@ -132,3 +132,14 @@ dslee@dslee-To-Be-Filled-By-O-E-M:~/workspace/my_arm_with_ball$ gz topic -t /mod
 ```
 ## 각 조인트 위치 참고
 https://chatgpt.com/share/6aad354b-b584-83ee-bf4e-08efa79133ac
+
+# 패키지 별로 부분 빌드.
+```sh
+colcon build --packages-select my_arm_with_ball_application --symlink-install
+```
+
+# 코드 스니펫
+```sh
+# 로컬에 받아온 MODEL SDF 찾기
+find ~/.gz -type f | grep -i "model.sdf"
+```
