@@ -27,7 +27,7 @@ ANGLE_STEP = 0.05
 class KeyboardJointTeleop(Node):
     def __init__(self) -> None:
         super().__init__("keyboard_joint_teleop")
-        self.publishers = tuple(
+        self.joint_publishers = tuple(
             self.create_publisher(Float64, f"/{joint_name}/cmd_pos", 10)
             for joint_name in JOINT_NAMES
         )
@@ -37,7 +37,7 @@ class KeyboardJointTeleop(Node):
     def publish_joint(self, joint_index: int) -> None:
         message = Float64()
         message.data = self.positions[joint_index]
-        self.publishers[joint_index].publish(message)
+        self.joint_publishers[joint_index].publish(message)
 
     def publish_all(self) -> None:
         for joint_index in range(len(JOINT_NAMES)):
