@@ -10,17 +10,26 @@ from rclpy.node import Node
 from std_msgs.msg import Float64
 
 
-JOINT_NAMES = tuple(f"panda_joint{index}" for index in range(1, 8))
-JOINT_LIMITS = (
-    (-2.8973, 2.8973),
-    (-1.7628, 1.7628),
-    (-2.8973, 2.8973),
-    (-3.0718, -0.0698),
-    (-2.8973, 2.8973),
-    (-0.0175, 3.7525),
-    (-2.8973, 2.8973),
+JOINT_NAMES = (
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
 )
-INITIAL_POSITIONS = (0.0, -0.7854, 0.0, -2.3562, 0.0, 1.5708, 0.0)
+JOINT_LIMITS = (
+    (-6.28319, 6.28319),
+    (-6.28319, 6.28319),
+    (-6.28319, 6.28319),
+    (-6.28319, 6.28319),
+    (-6.28319, 6.28319),
+    (-6.28319, 6.28319),
+)
+INITIAL_POSITIONS = (0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0)
+GRIPPER_JOINT_NAMES = ("rg2_finger_joint1", "rg2_finger_joint2")
+GRIPPER_LIMITS = (0.0, 1.18)
+INITIAL_GRIPPER_POSITION = 0.0
 ANGLE_STEP = 0.05
 
 
@@ -28,10 +37,15 @@ class KeyboardJointTeleop(Node):
     def __init__(self) -> None:
         super().__init__("keyboard_joint_teleop")
         self.joint_publishers = tuple(
-            self.create_publisher(Float64, f"/{joint_name}/cmd_pos", 10)
+            self.create_publisher(Float64, f"/ur5_{joint_name}/cmd_pos", 10)
             for joint_name in JOINT_NAMES
         )
+        self.gripper_publishers = tuple(
+            self.create_publisher(Float64, f"/{joint_name}/cmd_pos", 10)
+            for joint_name in GRIPPER_JOINT_NAMES
+        )
         self.positions = list(INITIAL_POSITIONS)
+        self.gripper_position = INITIAL_GRIPPER_POSITION
         self.selected_joint = 0
 
     def publish_joint(self, joint_index: int) -> None:
@@ -42,6 +56,13 @@ class KeyboardJointTeleop(Node):
     def publish_all(self) -> None:
         for joint_index in range(len(JOINT_NAMES)):
             self.publish_joint(joint_index)
+        self.publish_gripper()
+
+    def publish_gripper(self) -> None:
+        message = Float64()
+        message.data = self.gripper_position
+        for publisher in self.gripper_publishers:
+            publisher.publish(message)
 
     def change_selected_joint(self, delta: float) -> None:
         lower_limit, upper_limit = JOINT_LIMITS[self.selected_joint]
@@ -55,10 +76,16 @@ class KeyboardJointTeleop(Node):
         self.positions[joint_index] = INITIAL_POSITIONS[joint_index]
         self.publish_joint(joint_index)
 
+    def set_gripper(self, position: float) -> None:
+        lower_limit, upper_limit = GRIPPER_LIMITS
+        self.gripper_position = max(lower_limit, min(upper_limit, position))
+        self.publish_gripper()
+
     def print_help(self) -> None:
         self.get_logger().info(
-            "Select joint with 1-7 | a: -0.05 rad | d: +0.05 rad | "
-            "r: reset selected | x: reset all | q: quit"
+            "Select UR5 joint with 1-6 | a: -0.05 rad | d: +0.05 rad | "
+            "o: open RG2 | c: close RG2 | r: reset selected | "
+            "x: reset all | q: quit"
         )
 
 
@@ -87,7 +114,7 @@ def run() -> int:
                 continue
 
             key = sys.stdin.read(1).lower()
-            if key in "1234567":
+            if key in "123456":
                 node.selected_joint = int(key) - 1
                 node.get_logger().info(
                     f"Selected {JOINT_NAMES[node.selected_joint]} "
@@ -99,8 +126,13 @@ def run() -> int:
                 node.change_selected_joint(ANGLE_STEP)
             elif key == "r":
                 node.reset_joint(node.selected_joint)
+            elif key == "o":
+                node.set_gripper(GRIPPER_LIMITS[1])
+            elif key == "c":
+                node.set_gripper(GRIPPER_LIMITS[0])
             elif key == "x":
                 node.positions = list(INITIAL_POSITIONS)
+                node.gripper_position = INITIAL_GRIPPER_POSITION
                 node.publish_all()
             elif key == "q":
                 break

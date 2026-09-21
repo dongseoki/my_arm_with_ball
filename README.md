@@ -76,7 +76,7 @@ interactive terminal:
 ros2 launch my_arm_with_ball_bringup simulation.launch.py rviz:=false
 ```
 
-## Panda keyboard control
+## UR5 RG2 keyboard control
 
 In a second terminal, run the keyboard node after the simulation is started:
 
@@ -91,21 +91,28 @@ then change its target position in 0.05 rad increments:
 
 | Key | Action |
 | --- | --- |
-| `1` ... `7` | Select Panda joint 1 ... 7 |
+| `1` ... `6` | Select UR5 joint 1 ... 6 |
 | `a` | Decrease the selected joint target by 0.05 rad |
 | `d` | Increase the selected joint target by 0.05 rad |
+| `o` | Open the RG2 gripper |
+| `c` | Close the RG2 gripper |
 | `r` | Reset the selected joint to its initial target |
-| `x` | Reset all seven joints |
+| `x` | Reset all UR5 joints and the gripper |
 | `q` | Quit the keyboard node |
 
-The node clamps commands to the Panda joint limits and publishes
-`std_msgs/msg/Float64` on `/panda_jointN/cmd_pos`. The bridge forwards each
-topic to the corresponding Gazebo command topic:
+The node clamps commands to the UR5 and RG2 joint limits and publishes
+`std_msgs/msg/Float64` on `/ur5_<joint_name>/cmd_pos` and
+`/rg2_finger_joint{1,2}/cmd_pos`. The bridge forwards each topic to the
+corresponding Gazebo command topic:
 
 ```bash
-ros2 topic echo /panda_joint6/cmd_pos
-gz topic -e -t /model/panda/joint/panda_joint6/0/cmd_pos
+ros2 topic echo /ur5_wrist_3_joint/cmd_pos
+gz topic -e -t /model/ur5_rg2/joint/wrist_3_joint/0/cmd_pos
 ```
+
+The local `ur5_rg2` model is based on
+`https://fuel.gazebosim.org/1.0/anni/models/ur5_rg2/1` and is distributed
+under the Creative Commons Attribution 4.0 International license.
 
 If the keyboard node reports that it requires an interactive terminal, start
 it separately from a terminal after launching the simulation:
@@ -127,7 +134,7 @@ ros2 launch my_arm_with_ball_bringup simulation.launch.py
 
 # gazebo 로봇팔 테스트 명령어
 ```위아래로 고개 흔들기
-dslee@dslee-To-Be-Filled-By-O-E-M:~/workspace/my_arm_with_ball$ gz topic -t /model/panda/joint/panda_joint6/0/cmd_pos   -m gz.msgs.Double   -p 'data: -2'
+dslee@dslee-To-Be-Filled-By-O-E-M:~/workspace/my_arm_with_ball$ gz topic -t /model/ur5_rg2/joint/wrist_3_joint/0/cmd_pos   -m gz.msgs.Double   -p 'data: -2'
 
 ```
 ## 각 조인트 위치 참고

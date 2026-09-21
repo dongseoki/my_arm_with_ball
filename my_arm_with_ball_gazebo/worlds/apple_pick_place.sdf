@@ -59,26 +59,21 @@
         </model>
 
         <include>
-            <uri>model://panda_with_gripper</uri>
-            <name>panda</name>
+            <uri>model://ur5_rg2</uri>
+            <name>ur5_rg2</name>
             <pose>0 0 0 0 0 0</pose>
         </include>
-
-        <joint name="panda_base_fixed_joint" type="fixed">
-            <parent>world</parent>
-            <child>panda::panda_link0</child>
-        </joint>
 
         <include>
             <uri>
             https://fuel.gazebosim.org/1.0/OpenRobotics/models/RoboCup SPL Ball
             </uri>
-            <pose>0.45 -0.20 0.0325 0 0 0</pose>
+            <pose>0.55 -0.25 0.0325 0 0 0</pose>
         </include>
 
         <include>
             <uri>https://fuel.gazebosim.org/1.0/GoogleResearch/models/Threshold_Basket_Natural_Finish_Fabric_Liner_Small</uri>
-            <pose>0.62 0.25 0.000022 0 0 0</pose>
+            <pose>0.75 0.25 0.000022 0 0 0</pose>
             <static>true</static>
         </include>
     </world>
