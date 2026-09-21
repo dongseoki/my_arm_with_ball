@@ -642,7 +642,7 @@
             <p_gain>20</p_gain>
             <d_gain>1</d_gain>
             <i_gain>0</i_gain>
-            <cmd_min>0</cmd_min>
+            <cmd_min>-10.6</cmd_min>
             <cmd_max>10.6</cmd_max>
         </plugin>
         <plugin filename="ignition-gazebo-joint-position-controller-system" name="ignition::gazebo::systems::JointPositionController">
@@ -650,7 +650,7 @@
             <p_gain>20</p_gain>
             <d_gain>1</d_gain>
             <i_gain>0</i_gain>
-            <cmd_min>0</cmd_min>
+            <cmd_min>-10.6</cmd_min>
             <cmd_max>10.6</cmd_max>
         </plugin>
     </model>
