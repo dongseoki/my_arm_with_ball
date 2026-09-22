@@ -653,5 +653,16 @@
             <cmd_min>-10.6</cmd_min>
             <cmd_max>10.6</cmd_max>
         </plugin>
+        <plugin filename="ignition-gazebo-joint-state-publisher-system" name="ignition::gazebo::systems::JointStatePublisher">
+            <update_rate>100</update_rate>
+            <joint_name>shoulder_pan_joint</joint_name>
+            <joint_name>shoulder_lift_joint</joint_name>
+            <joint_name>elbow_joint</joint_name>
+            <joint_name>wrist_1_joint</joint_name>
+            <joint_name>wrist_2_joint</joint_name>
+            <joint_name>wrist_3_joint</joint_name>
+            <joint_name>rg2_finger_joint1</joint_name>
+            <joint_name>rg2_finger_joint2</joint_name>
+        </plugin>
     </model>
 </sdf>

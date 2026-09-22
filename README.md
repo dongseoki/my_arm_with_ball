@@ -110,6 +110,16 @@ ros2 topic echo /ur5_wrist_3_joint/cmd_pos
 gz topic -e -t /model/ur5_rg2/joint/wrist_3_joint/0/cmd_pos
 ```
 
+The Gazebo model publishes the measured joint states at 100 Hz. The bridge
+converts them to `sensor_msgs/msg/JointState` on `/joint_states`. Use this
+topic to compare the commanded target with the actual simulated position:
+
+```bash
+ros2 topic echo /joint_states
+ros2 topic info /joint_states -v
+gz topic -e -t /world/arm_world/model/ur5_rg2/joint_state
+```
+
 The local `ur5_rg2` model is based on
 `https://fuel.gazebosim.org/1.0/anni/models/ur5_rg2/1` and is distributed
 under the Creative Commons Attribution 4.0 International license.
