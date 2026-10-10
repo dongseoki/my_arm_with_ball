@@ -21,18 +21,18 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def prepare_simulation(model_path, world_path, controllers_path):
-    """Derive control description and physical world without changing sources."""
+    """Add the control system to the model include and prepare its description."""
     model_root = ET.parse(model_path).getroot()
     model = model_root.find('model')
     if model is None or model.find('ros2_control') is None:
         raise ValueError('Robot SDF must contain a model-level ros2_control resource.')
-    for uri in model.findall('.//mesh/uri'):
+    description_root = copy.deepcopy(model_root)
+    description_model = description_root.find('model')
+    for uri in description_model.findall('.//mesh/uri'):
         value = (uri.text or '').strip()
         if value and '://' not in value and not os.path.isabs(value):
             uri.text = (Path(model_path).resolve().parent / value).as_uri()
 
-    description_root = copy.deepcopy(model_root)
-    description_model = description_root.find('model')
     # Strip model-level Gazebo systems, not the hardware plugin resource.
     for plugin in list(description_model.findall('plugin')):
         description_model.remove(plugin)
@@ -50,26 +50,13 @@ def prepare_simulation(model_path, world_path, controllers_path):
                 if (item.findtext('uri') or '').strip() == 'model://ur5_rg2']
     if len(includes) != 1:
         raise ValueError('World must include model://ur5_rg2 exactly once.')
-    include = includes[0]
-    physical_model = copy.deepcopy(model)
-    for resource in list(physical_model.findall('ros2_control')):
-        physical_model.remove(resource)
-    name = include.findtext('name')
-    if name:
-        physical_model.set('name', name)
-    pose = include.find('pose')
-    if pose is not None:
-        for original in list(physical_model.findall('pose')):
-            physical_model.remove(original)
-        physical_model.insert(0, copy.deepcopy(pose))
-    plugin = ET.SubElement(physical_model, 'plugin', {
-        'filename': 'libgz_ros2_control-system.so',
+    # SDF supports plugin overrides on <include>. This attaches the system to
+    # the included model without copying or rewriting the physical model.
+    plugin = ET.SubElement(includes[0], 'plugin', {
         'name': 'gz_ros2_control::GazeboSimROS2ControlPlugin',
+        'filename': 'libgz_ros2_control-system.so',
     })
     ET.SubElement(plugin, 'parameters').text = str(Path(controllers_path).resolve())
-    index = list(world).index(include)
-    world.remove(include)
-    world.insert(index, physical_model)
     return (ET.tostring(world_root, encoding='unicode'),
             ET.tostring(description_root, encoding='unicode'))
 

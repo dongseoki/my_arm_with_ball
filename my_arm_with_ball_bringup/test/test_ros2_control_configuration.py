@@ -127,24 +127,21 @@ class SimulationPreparationTests(unittest.TestCase):
         spec.loader.exec_module(cls.launch_module)
 
     def setUp(self):
-        """Generate fresh physical and description fixtures for each test."""
+        """Prepare fresh world and state-publisher description fixtures."""
         self.world_xml, self.description_xml = self.launch_module.prepare_simulation(
             str(MODEL), str(WORLD), str(CONTROLLERS))
         self.world = ET.fromstring(self.world_xml).find('world')
-        self.physical = self.world.find("model[@name='ur5_rg2']")
+        self.include = next(item for item in self.world.findall('include')
+                            if item.findtext('uri', '').strip() == 'model://ur5_rg2')
+        self.physical = ET.parse(MODEL).getroot().find('model')
         self.description = ET.fromstring(self.description_xml).find('model')
 
-    def test_generated_world_keeps_physical_joint_graph_and_gripper_plugins(self):
-        """Generated world keeps physical joint graph and gripper plugins."""
-        source = ET.parse(MODEL).getroot().find('model')
-        self.assertIsNotNone(self.physical)
-        self.assertEqual([semantic_tree(j) for j in self.physical.findall('joint')],
-                         [semantic_tree(j) for j in source.findall('joint')])
-        self.assertEqual([semantic_tree(p) for p in self.physical.findall('plugin')
-                          if 'JointPositionController' in p.get('name', '')],
-                         [semantic_tree(p) for p in source.findall('plugin')
-                          if 'JointPositionController' in p.get('name', '')])
-        self.assertIsNone(self.physical.find('ros2_control'))
+    def test_physical_sdf_keeps_joint_graph_and_gripper_plugins(self):
+        """Physical source model stays intact; plugin is attached by the include."""
+        self.assertIsNotNone(self.physical.find('ros2_control'))
+        self.assertEqual(self.physical.find('joint').get('name'), 'ur5_rg2_joint_world')
+        self.assertEqual(len([p for p in self.physical.findall('plugin')
+                              if 'JointPositionController' in p.get('name', '')]), 2)
 
     def test_description_keeps_resources_but_excludes_world_fixed_joint_and_plugins(self):
         """Description keeps resources but excludes world fixed joint and plugins."""
@@ -162,37 +159,39 @@ class SimulationPreparationTests(unittest.TestCase):
                          [semantic_tree(j) for j in source.findall('joint')
                           if j.findtext('parent') != 'world'])
 
-    def test_only_robot_include_changes_in_world(self):
-        """Only robot include changes in world."""
+    def test_only_robot_include_receives_plugin_overlay(self):
+        """Only robot include receives plugin; model is not inlined."""
         original = ET.parse(WORLD).getroot().find('world')
         expected = [semantic_tree(e) for e in original
-                    if not (e.tag == 'include'
-                            and e.findtext('uri', '').strip() == 'model://ur5_rg2')]
-        actual = [semantic_tree(e) for e in self.world if e is not self.physical]
+                    if e.tag != 'include' or
+                    e.findtext('uri', '').strip() != 'model://ur5_rg2']
+        actual = [semantic_tree(e) for e in self.world if e is not self.include]
         self.assertEqual(actual, expected)
+        self.assertEqual(self.include.findtext('uri'), 'model://ur5_rg2')
 
-    def test_both_outputs_keep_links_with_only_absolute_mesh_uri_rewrites(self):
-        """Both outputs keep links with only absolute mesh uri rewrites."""
+    def test_description_keeps_links_with_absolute_mesh_uris(self):
+        """Description links keep their geometry with resolved mesh URIs."""
         source = ET.parse(MODEL).getroot().find('model')
         for uri in source.findall('.//mesh/uri'):
             uri.text = (MODEL.parent / uri.text.strip()).resolve().as_uri()
         expected = [semantic_tree(link) for link in source.findall('link')]
-        for model in (self.physical, self.description):
-            self.assertEqual([semantic_tree(link) for link in model.findall('link')], expected)
-            for uri in model.findall('.//mesh/uri'):
-                self.assertTrue(uri.text.startswith('file:///'))
-                self.assertTrue(Path(unquote(urlsplit(uri.text).path)).is_file())
+        self.assertEqual([semantic_tree(link) for link in self.description.findall('link')],
+                         expected)
+        for uri in self.description.findall('.//mesh/uri'):
+            self.assertTrue(uri.text.startswith('file:///'))
+            self.assertTrue(Path(unquote(urlsplit(uri.text).path)).is_file())
 
-    def test_generated_world_has_single_plugin_with_resolved_configuration(self):
-        """Generated world has single plugin with resolved configuration."""
-        plugins = [p for p in self.physical.findall('plugin')
+    def test_include_plugin_has_resolved_configuration(self):
+        """Include override configures gz_ros2_control with resolved YAML path."""
+        plugins = [p for p in self.include.findall('plugin')
                    if 'gz_ros2_control' in p.get('filename', '')]
         self.assertEqual(len(plugins), 1)
-        self.assertEqual(plugins[0].get('name'), 'gz_ros2_control::GazeboSimROS2ControlPlugin')
+        self.assertEqual(plugins[0].get('name'),
+                         'gz_ros2_control::GazeboSimROS2ControlPlugin')
         self.assertEqual(Path(plugins[0].findtext('parameters')), CONTROLLERS.resolve())
 
     def test_preparation_is_relocatable_repeatable_and_never_mutates_inputs(self):
-        """Preparation is relocatable repeatable and never mutates inputs."""
+        """Generated world is relocatable, repeatable and does not mutate inputs."""
         with tempfile.TemporaryDirectory(prefix='control & test ') as directory:
             root = Path(directory)
             model = root / 'model/model.sdf'
@@ -207,13 +206,11 @@ class SimulationPreparationTests(unittest.TestCase):
             second = self.launch_module.prepare_simulation(*map(str, paths))
             self.assertEqual(first, second)
             self.assertEqual([p.read_bytes() for p in paths], before)
-            robot = ET.fromstring(first[0]).find("world/model[@name='ur5_rg2']")
-            plugin = next(p for p in robot.findall('plugin')
-                          if 'gz_ros2_control' in p.get('filename', ''))
+            plugin = ET.fromstring(first[0]).find(
+                "world/include[uri='model://ur5_rg2']/plugin")
             self.assertEqual(Path(plugin.findtext('parameters')), config.resolve())
-            for xml in first:
-                for uri in ET.fromstring(xml).findall('.//mesh/uri'):
-                    self.assertTrue(Path(unquote(urlsplit(uri.text).path)).is_relative_to(root))
+            for uri in ET.fromstring(first[1]).findall('.//mesh/uri'):
+                self.assertTrue(Path(unquote(urlsplit(uri.text).path)).is_relative_to(root))
 
     def test_spawner_success_starts_only_requested_next_actions(self):
         """Spawner success starts only requested next actions."""
@@ -238,7 +235,8 @@ class SimulationPreparationTests(unittest.TestCase):
             model = Path(directory) / 'model.sdf'
             model.write_text('<sdf version="1.10"><model name="ur5_rg2"/></sdf>')
             with self.assertRaisesRegex(ValueError, 'ros2_control'):
-                self.launch_module.prepare_simulation(str(model), str(WORLD), str(CONTROLLERS))
+                self.launch_module.prepare_simulation(
+                    str(model), str(WORLD), str(CONTROLLERS))
 
     def test_world_requires_exactly_one_robot_include(self):
         """World requires exactly one robot include."""
