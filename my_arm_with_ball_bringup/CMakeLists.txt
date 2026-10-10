@@ -22,6 +22,15 @@ install(
 )
 
 if(BUILD_TESTING)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(
+    NAME test_ros2_control_configuration
+    COMMAND ${Python3_EXECUTABLE} -m unittest discover
+      -s test -p test_ros2_control_configuration.py
+  )
+  set_tests_properties(test_ros2_control_configuration PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()

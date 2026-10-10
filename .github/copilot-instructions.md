@@ -96,3 +96,10 @@ topic mappings there when application nodes need simulator data or commands.
 - For world/model-only iteration, prefer `--symlink-install`; for C++ plugin,
   CMake, dependency, or Gazebo-version changes, use a normal rebuild and
   re-source `install/setup.bash`.
+
+<!-- mermaid-ai-skills:start -->
+## Mermaid Diagrams
+
+When the user asks to create, edit, or visualize a diagram, follow the
+instructions in `.github/instructions/mermaid.instructions.md`.
+<!-- mermaid-ai-skills:end -->

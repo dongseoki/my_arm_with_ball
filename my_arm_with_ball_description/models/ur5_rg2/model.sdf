@@ -589,54 +589,72 @@
             <child>tool0</child>
         </joint>
 
-        <plugin filename="ignition-gazebo-joint-position-controller-system" name="ignition::gazebo::systems::JointPositionController">
-            <joint_name>shoulder_pan_joint</joint_name>
-            <p_gain>100</p_gain>
-            <d_gain>10</d_gain>
-            <i_gain>0</i_gain>
-            <cmd_min>-150</cmd_min>
-            <cmd_max>150</cmd_max>
-        </plugin>
-        <plugin filename="ignition-gazebo-joint-position-controller-system" name="ignition::gazebo::systems::JointPositionController">
-            <joint_name>shoulder_lift_joint</joint_name>
-            <p_gain>100</p_gain>
-            <d_gain>10</d_gain>
-            <i_gain>0</i_gain>
-            <cmd_min>-150</cmd_min>
-            <cmd_max>150</cmd_max>
-        </plugin>
-        <plugin filename="ignition-gazebo-joint-position-controller-system" name="ignition::gazebo::systems::JointPositionController">
-            <joint_name>elbow_joint</joint_name>
-            <p_gain>100</p_gain>
-            <d_gain>10</d_gain>
-            <i_gain>0</i_gain>
-            <cmd_min>-150</cmd_min>
-            <cmd_max>150</cmd_max>
-        </plugin>
-        <plugin filename="ignition-gazebo-joint-position-controller-system" name="ignition::gazebo::systems::JointPositionController">
-            <joint_name>wrist_1_joint</joint_name>
-            <p_gain>50</p_gain>
-            <d_gain>5</d_gain>
-            <i_gain>0</i_gain>
-            <cmd_min>-28</cmd_min>
-            <cmd_max>28</cmd_max>
-        </plugin>
-        <plugin filename="ignition-gazebo-joint-position-controller-system" name="ignition::gazebo::systems::JointPositionController">
-            <joint_name>wrist_2_joint</joint_name>
-            <p_gain>50</p_gain>
-            <d_gain>5</d_gain>
-            <i_gain>0</i_gain>
-            <cmd_min>-28</cmd_min>
-            <cmd_max>28</cmd_max>
-        </plugin>
-        <plugin filename="ignition-gazebo-joint-position-controller-system" name="ignition::gazebo::systems::JointPositionController">
-            <joint_name>wrist_3_joint</joint_name>
-            <p_gain>50</p_gain>
-            <d_gain>5</d_gain>
-            <i_gain>0</i_gain>
-            <cmd_min>-28</cmd_min>
-            <cmd_max>28</cmd_max>
-        </plugin>
+        <!-- Control resources; launch supplies this description to ros2_control.
+             The physical world keeps ur5_rg2_joint_world and receives the
+             Gazebo plugin with a runtime-resolved controller YAML path. -->
+        <ros2_control name="GazeboSimSystem" type="system">
+            <hardware>
+                <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+            </hardware>
+            <joint name="shoulder_pan_joint">
+                <command_interface name="position">
+                    <param name="min">-6.28319</param>
+                    <param name="max">6.28319</param>
+                </command_interface>
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="shoulder_lift_joint">
+                <command_interface name="position">
+                    <param name="min">-6.28319</param>
+                    <param name="max">6.28319</param>
+                </command_interface>
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="elbow_joint">
+                <command_interface name="position">
+                    <param name="min">-6.28319</param>
+                    <param name="max">6.28319</param>
+                </command_interface>
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="wrist_1_joint">
+                <command_interface name="position">
+                    <param name="min">-6.28319</param>
+                    <param name="max">6.28319</param>
+                </command_interface>
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="wrist_2_joint">
+                <command_interface name="position">
+                    <param name="min">-6.28319</param>
+                    <param name="max">6.28319</param>
+                </command_interface>
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="wrist_3_joint">
+                <command_interface name="position">
+                    <param name="min">-6.28319</param>
+                    <param name="max">6.28319</param>
+                </command_interface>
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <!-- Observation only: legacy Gazebo plugins still drive the fingers. -->
+            <joint name="rg2_finger_joint1">
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="rg2_finger_joint2">
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+        </ros2_control>
+
         <plugin filename="ignition-gazebo-joint-position-controller-system" name="ignition::gazebo::systems::JointPositionController">
             <joint_name>rg2_finger_joint1</joint_name>
             <p_gain>20</p_gain>
@@ -652,17 +670,6 @@
             <i_gain>0</i_gain>
             <cmd_min>-10.6</cmd_min>
             <cmd_max>10.6</cmd_max>
-        </plugin>
-        <plugin filename="ignition-gazebo-joint-state-publisher-system" name="ignition::gazebo::systems::JointStatePublisher">
-            <update_rate>100</update_rate>
-            <joint_name>shoulder_pan_joint</joint_name>
-            <joint_name>shoulder_lift_joint</joint_name>
-            <joint_name>elbow_joint</joint_name>
-            <joint_name>wrist_1_joint</joint_name>
-            <joint_name>wrist_2_joint</joint_name>
-            <joint_name>wrist_3_joint</joint_name>
-            <joint_name>rg2_finger_joint1</joint_name>
-            <joint_name>rg2_finger_joint2</joint_name>
         </plugin>
     </model>
 </sdf>
