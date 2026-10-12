@@ -81,10 +81,10 @@ so the SDF plugin can load its controller YAML through a relative path.
 
 ## UR5 RG2 keyboard control
 
-The keyboard node has not yet been switched to the arm controller's command
-topic. Until that step is implemented, its `1`–`6`, `a/d`, `r/x` arm commands
-do not move the arm. The `o/c` gripper commands still use the Gazebo bridge.
-In a second terminal, run it for gripper control:
+The keyboard node sends the six UR5 target positions to the ros2_control arm
+controller. It waits up to 120 seconds for `arm_position_controller` to become
+active before sending its initial zero-position target. The `o/c` gripper
+commands still use the Gazebo bridge. In a second terminal, run:
 
 ```bash
 source /opt/ros/$ROS_DISTRO/setup.bash
@@ -108,8 +108,7 @@ then change its target position in 0.05 rad increments:
 
 The arm controller accepts six target positions in joint order
 `shoulder_pan_joint`, `shoulder_lift_joint`, `elbow_joint`, `wrist_1_joint`,
-`wrist_2_joint`, `wrist_3_joint`. To test the new arm path before the keyboard
-node is updated:
+`wrist_2_joint`, `wrist_3_joint`. To test the arm controller directly:
 
 ```bash
 ros2 topic pub --once /arm_position_controller/commands std_msgs/msg/Float64MultiArray '{data: [0.1, 0.0, 0.0, 0.0, 0.0, 0.0]}'
