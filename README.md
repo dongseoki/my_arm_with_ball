@@ -79,6 +79,59 @@ simulation.launch.py headless:=true`. This also disables RViz by default.
 The launch sets Gazebo's working directory to the installed bringup package
 so the SDF plugin can load its controller YAML through a relative path.
 
+## MoveIt planning
+
+The `my_arm_with_ball_moveit_config` package provides a planning-only MoveIt
+setup for the UR5 and RG2. Build and source the workspace, then start the
+complete planning demo:
+
+```bash
+colcon build --packages-select my_arm_with_ball_moveit_config --symlink-install
+source install/setup.bash
+ros2 launch my_arm_with_ball_moveit_config demo.launch.py
+```
+
+`demo.launch.py` is the usual entry point. It starts `robot_state_publisher`,
+`joint_state_publisher` (an independent home pose, not Gazebo joint states),
+MoveGroup, the configured planning scene, and RViz with the MotionPlanning
+panel. To run the planning components without RViz:
+
+```bash
+ros2 launch my_arm_with_ball_moveit_config demo.launch.py use_rviz:=false
+```
+
+The two other launch files are building blocks that `demo.launch.py` includes:
+
+* `move_group.launch.py` starts only the MoveGroup planning node. It loads the
+  UR5/RG2 MoveIt configuration and OMPL pipeline, and publishes planning scene
+  updates. It intentionally disables trajectory execution. Use this when
+  assembling a custom launch setup; that setup must also provide the robot
+  description and state topics that MoveGroup monitors. It does not start
+  RViz, state publishers, or the demo planning scene loader.
+
+  ```bash
+  ros2 launch my_arm_with_ball_moveit_config move_group.launch.py
+  ```
+
+* `moveit_rviz.launch.py` starts RViz with the package's MoveIt configuration
+  and MotionPlanning display. Use it to attach the planning UI to an already
+  running MoveGroup and robot state setup. By itself it does not start
+  MoveGroup or publish robot state.
+
+  ```bash
+  ros2 launch my_arm_with_ball_moveit_config moveit_rviz.launch.py
+  ```
+
+For normal use, start only `demo.launch.py`; launching the two component files
+separately is intended for custom integrations and requires their supporting
+ROS nodes to be running. The planning-only demo does not start Gazebo or send
+trajectories to the robot. The included validation executable can request
+plans without executing them:
+
+```bash
+ros2 run my_arm_with_ball_moveit_config validate_planning.py
+```
+
 ## UR5 RG2 keyboard control
 
 The keyboard node sends the six UR5 target positions to the ros2_control arm
