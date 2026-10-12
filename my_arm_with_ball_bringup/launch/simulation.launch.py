@@ -99,10 +99,28 @@ def generate_launch_description():
         output="screen",
     )
 
+    gripper_position_controller = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=[
+            "gripper_position_controller",
+            "--controller-manager",
+            "/controller_manager",
+            "--controller-manager-timeout",
+            "120",
+        ],
+        output="screen",
+    )
+
     def start_arm_after_broadcaster(event, _context):
         if event.returncode == 0:
             return [arm_position_controller]
         return [LogInfo(msg="ERROR: joint_state_broadcaster failed; arm controller was not started")]
+
+    def start_gripper_after_arm(event, _context):
+        if event.returncode == 0:
+            return [gripper_position_controller]
+        return [LogInfo(msg="ERROR: arm controller failed; gripper controller was not started")]
 
     return LaunchDescription(
         [
@@ -122,6 +140,12 @@ def generate_launch_description():
                 OnProcessExit(
                     target_action=joint_state_broadcaster,
                     on_exit=start_arm_after_broadcaster,
+                )
+            ),
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=arm_position_controller,
+                    on_exit=start_gripper_after_arm,
                 )
             ),
         ]

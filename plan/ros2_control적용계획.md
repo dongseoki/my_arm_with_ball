@@ -1,7 +1,7 @@
 # ros2_control 적용 계획
 
-진행 현황: **0·1·2·3·4단계 기술 검증 완료, 5단계 그리퍼 전환 미완료**.
-Gazebo에서 두 컨트롤러의 활성화, 키보드 팔 명령의 실제 이동, 그리퍼 `o/c` 동작과 8개 관절의 `/joint_states` 발행을 확인했다.
+진행 현황: **0·1·2·3·4·5단계 기술 검증 완료**.
+Gazebo에서 세 컨트롤러의 활성화, 키보드 팔·그리퍼 명령의 실제 이동과 8개 관절의 `/joint_states` 발행을 확인했다.
 
 ## 1. 목표와 진행 방식
 
@@ -12,11 +12,11 @@ Gazebo에서 두 컨트롤러의 활성화, 키보드 팔 명령의 실제 이�
 ## 2. 합의한 적용 범위
 
 - UR5 팔의 6개 관절에 ros2_control을 적용한다.
-- RG2 그리퍼의 명령은 기존 제어 방식을 유지하고, 상태만 ros2_control의 읽기 전용 인터페이스에 포함한다.
+- 1~4단계에서는 RG2 그리퍼의 기존 명령 방식을 유지하고 상태만 ros2_control에 포함한다. 5단계에서 두 손가락의 명령도 ros2_control로 전환한다.
 - 키보드의 `1~6`, `a/d`, `r/x` 조작을 유지한다.
 - 그리퍼의 `o/c` 조작을 유지한다.
-- MoveIt 적용, 실제 로봇 연결, 그리퍼 명령의 ros2_control 전환은 이번 단계의 범위에 포함하지 않는다.
-- 그리퍼 명령의 ros2_control 전환은 현재 팔 전환 및 통합 검증을 마친 뒤 별도 5단계에서 진행한다.
+- MoveIt 적용과 실제 로봇 연결은 범위에 포함하지 않는다.
+- 그리퍼 명령의 ros2_control 전환은 팔 전환 및 통합 검증을 마친 뒤 별도 5단계에서 진행했다.
 - 공을 집어 바구니에 놓는 자동 동작은 이번 단계의 완료 조건에 포함하지 않는다.
 
 대상 관절과 키보드 선택 번호:
@@ -71,7 +71,16 @@ keyboard_joint_teleop
   → UR5의 6개 관절
 ```
 
-팔과 그리퍼의 실제 관절 상태는 ros2_control의 상태 인터페이스를 통해 읽고, 하나의 `joint_state_broadcaster`가 8개 관절을 `/joint_states`로 제공한다. 그리퍼에는 명령 인터페이스를 추가하지 않으며, 그리퍼 명령은 기존 ROS–Gazebo 브리지 경로를 유지한다.
+5단계 완료 후 그리퍼 명령 흐름:
+
+```text
+keyboard_joint_teleop
+  → gripper_position_controller
+  → gz_ros2_control/GazeboSimSystem
+  → RG2의 2개 관절
+```
+
+팔과 그리퍼의 실제 관절 상태는 ros2_control의 상태 인터페이스를 통해 읽고, 하나의 `joint_state_broadcaster`가 8개 관절을 `/joint_states`로 제공한다. 5단계에서 그리퍼 두 관절에 `position` 명령 인터페이스와 `gripper_position_controller`를 추가했고 기존 그리퍼 ROS–Gazebo 명령 브리지를 제거했다.
 
 1단계에서 확정한 구성:
 
@@ -81,7 +90,7 @@ keyboard_joint_teleop
 - 팔 명령: `/arm_position_controller/commands`에 `std_msgs/msg/Float64MultiArray`로 위 표 순서의 6개 목표각 전달. 이동 시간은 지정하지 않는다.
 - 초기화: 키보드 노드 시작 시 기존처럼 모든 팔 관절에 `0.0` rad 목표를 명령한다. `r/x` 목표와 기존 키 조작은 유지한다. 키보드 명령 전환은 3단계에서 구현한다.
 - 모델: 기존 물리 SDF와 world 고정을 유지하고, 별도 Xacro가 생성한 URDF를 `robot_description`에 제공한다. SDF를 변환해 `robot_description`으로 사용하지 않는다.
-- 독점 제어: ros2_control 활성화 전에 기존 팔 Gazebo 제어 플러그인 6개를 비활성화한다. 그리퍼 플러그인 2개는 유지한다.
+- 독점 제어: 1~4단계에서 팔 Gazebo 제어 플러그인 6개를 비활성화했고, 5단계에서 그리퍼 플러그인 2개도 제거했다.
 - 상태: 팔 6개와 그리퍼 2개의 실제 상태를 하나의 broadcaster로 제공하고 기존 `/joint_states` 브리지를 대체해 중복을 방지한다. Gazebo 연결과 그리퍼 상태 공존은 2단계에서 검증했다.
 
 ## 5. 단계별 실습 계획
@@ -150,15 +159,15 @@ ros2 launch my_arm_with_ball_bringup simulation.launch.py headless:=true rviz:=f
 
 별도 터미널에서 같은 ROS 및 워크스페이스 환경을 적용한 뒤 `ros2 run my_arm_with_ball_application keyboard_joint_teleop`을 실행한다. 상태 확인에는 `ros2 control list_controllers`, `ros2 topic info /joint_states -v`, `ros2 topic echo /joint_states`를 사용한다. 이번 실행에서 네 패키지 빌드와 검사 3개가 모두 통과했다.
 
-### 5단계: RG2 그리퍼 명령의 ros2_control 전환 (후속 작업)
+### 5단계: RG2 그리퍼 명령의 ros2_control 전환
 
-- [ ] 두 그리퍼 관절의 명령 인터페이스와 컨트롤러를 정하고, 기존 `o/c`와 `x`의 목표값 및 관절 동작을 유지할 방법을 확인한다.
-- [ ] Xacro/URDF에 두 관절의 명령 인터페이스를 추가하고 컨트롤러 설정과 활성화 절차를 연결한다.
-- [ ] 같은 관절을 중복 제어하지 않도록 기존 Gazebo 그리퍼 제어 플러그인 2개와 명령 브리지 2개를 전환 시점에 제거한다.
-- [ ] 키보드 그리퍼 명령을 새 컨트롤러에 연결하고 `o/c`, `x`, 시작 시 초기 명령을 확인한다.
-- [ ] 두 관절의 실제 상태와 재시작 후 동작을 검증하고 실행 방법을 정리한다.
+- [x] 두 그리퍼 관절의 명령 인터페이스와 컨트롤러를 정하고, 기존 `o/c`와 `x`의 목표값 및 관절 동작을 유지할 방법을 확인한다.
+- [x] Xacro/URDF에 두 관절의 명령 인터페이스를 추가하고 컨트롤러 설정과 활성화 절차를 연결한다.
+- [x] 같은 관절을 중복 제어하지 않도록 기존 Gazebo 그리퍼 제어 플러그인 2개와 명령 브리지 2개를 전환 시점에 제거한다.
+- [x] 키보드 그리퍼 명령을 새 컨트롤러에 연결하고 `o/c`, `x`, 시작 시 초기 명령을 확인한다.
+- [x] 두 관절의 실제 상태와 재시작 후 동작을 검증하고 실행 방법을 정리한다.
 
-이 단계는 3단계 팔 키보드 전환과 4단계의 기존 구성 통합 검증이 끝난 뒤 착수한다. 현재 3·4단계의 완료 기준에는 포함하지 않는다.
+확인 결과 (2026-10-12, `headless:=true`): `joint_state_broadcaster`, `arm_position_controller`, `gripper_position_controller`가 모두 `active`이고 그리퍼 두 `position` 명령 인터페이스가 `claimed`였다. 키보드 `o`에서 두 손가락이 각각 `1.18` rad, `c`와 `x`에서 각각 약 `0` rad로 이동했다. `1d`에서 팔 첫 관절이 `0.05` rad로 이동하고 `x`에서 `0`으로 복귀했다. `/joint_states` 발행자는 하나였다. 키보드를 시뮬레이션보다 먼저 시작해도 두 컨트롤러가 활성화된 후 초기 명령을 전달했고, 시뮬레이션 재시작 후에도 `o` 동작을 재현했다. 이전 그리퍼 명령 토픽과 Gazebo 제어 플러그인은 제거했다. 모델 일치 검사를 포함한 네 패키지 빌드와 검사 3개가 통과했다. 두 번째 손가락이 Gazebo의 위치 속도 제어에서 정확한 0 rad 하한에 붙는 현상이 있어 물리 모델의 하한에 `-0.001` rad 여유를 주고 Xacro에도 맞췄다. 키보드 목표 범위와 실제 닫힘 목표는 여전히 `0~1.18` rad다. 화면상의 대칭 자세와 접촉·충돌은 헤드리스 검증에 포함하지 않았다. 상세 절차와 결과는 [5단계 실행 계획](5step_plan.md)에 기록한다.
 
 ## 6. 합의한 완료 기준
 
@@ -167,7 +176,7 @@ ros2 launch my_arm_with_ball_bringup simulation.launch.py headless:=true rviz:=f
 - [x] `r`로 선택 관절을, `x`로 팔 전체와 그리퍼를 기존 재설정 목표로 돌릴 수 있다.
 - [x] 팔 명령이 ros2_control을 거쳐 Gazebo에 전달된다. (컨트롤러 토픽 직접 발행으로 확인)
 - [x] 실제 팔 관절 위치가 `/joint_states`로 제공된다.
-- [x] 그리퍼의 `o/c` 조작은 기존 제어 방식으로 동작한다.
+- [x] 그리퍼의 `o/c` 조작은 ros2_control을 통해 동작한다.
 - [ ] 단계별 설명과 실행 확인을 통해 제어 구조를 함께 이해한다.
 
 ## 7. 기술 확인 사항
@@ -180,4 +189,4 @@ ros2 launch my_arm_with_ball_bringup simulation.launch.py headless:=true rviz:=f
 - [x] 초기 목표 위치와 실제 초기 위치의 처리
 - [x] 팔과 그리퍼의 관절 상태를 `/joint_states`에 제공하는 방식
 
-현재 상태: SDF와 Xacro/URDF를 분리하고 `gz_ros2_control` 및 두 컨트롤러를 연결했다. 키보드의 팔 명령을 `/arm_position_controller/commands`로 전환했다. 초기 목표는 실제 시작 위치를 읽어 복사하지 않고 기존처럼 0 rad로 발행한다. 4단계 기술 검증을 마쳤으며, 그리퍼 명령 전환은 별도 5단계다.
+현재 상태: SDF와 Xacro/URDF를 분리하고 `gz_ros2_control`, `joint_state_broadcaster`, 팔·그리퍼 컨트롤러를 연결했다. 키보드의 팔과 그리퍼 명령은 각각 `/arm_position_controller/commands`, `/gripper_position_controller/commands`로 전달한다. 초기 목표는 실제 시작 위치를 읽어 복사하지 않고 기존처럼 0 rad로 발행한다. 5단계 기술 검증을 마쳤다.

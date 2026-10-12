@@ -91,8 +91,13 @@ class ModelConsistencyTest(unittest.TestCase):
             name = joint.get("name")
             commands = [item.get("name") for item in joint.findall("command_interface")]
             states = {item.get("name") for item in joint.findall("state_interface")}
-            self.assertEqual(commands, [] if name.startswith("rg2_") else ["position"], name)
+            self.assertEqual(commands, ["position"], name)
             self.assertEqual(states, {"position", "velocity"}, name)
+
+    def test_right_finger_lower_limit_margin(self):
+        # Gazebo's position-velocity control stalled this finger at an exact zero lower stop.
+        right = self.sdf.find("joint[@name='rg2_finger_joint2']")
+        self.assertAlmostEqual(float(right.findtext("axis/limit/lower")), -0.001)
 
 
 if __name__ == "__main__":

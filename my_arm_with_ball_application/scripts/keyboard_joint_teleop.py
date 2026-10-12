@@ -10,7 +10,7 @@ import tty
 import rclpy
 from controller_manager_msgs.srv import ListControllers
 from rclpy.node import Node
-from std_msgs.msg import Float64, Float64MultiArray
+from std_msgs.msg import Float64MultiArray
 
 
 JOINT_NAMES = (
@@ -34,7 +34,9 @@ GRIPPER_JOINT_NAMES = ("rg2_finger_joint1", "rg2_finger_joint2")
 GRIPPER_LIMITS = (0.0, 1.18)
 INITIAL_GRIPPER_POSITION = 0.0
 ANGLE_STEP = 0.05
-CONTROLLER_NAME = "arm_position_controller"
+ARM_CONTROLLER_NAME = "arm_position_controller"
+GRIPPER_CONTROLLER_NAME = "gripper_position_controller"
+CONTROLLER_NAMES = (ARM_CONTROLLER_NAME, GRIPPER_CONTROLLER_NAME)
 CONTROLLER_WAIT_TIMEOUT = 120.0
 
 
@@ -42,20 +44,19 @@ class KeyboardJointTeleop(Node):
     def __init__(self) -> None:
         super().__init__("keyboard_joint_teleop")
         self.arm_publisher = self.create_publisher(
-            Float64MultiArray, f"/{CONTROLLER_NAME}/commands", 10
+            Float64MultiArray, f"/{ARM_CONTROLLER_NAME}/commands", 10
         )
-        self.gripper_publishers = tuple(
-            self.create_publisher(Float64, f"/{joint_name}/cmd_pos", 10)
-            for joint_name in GRIPPER_JOINT_NAMES
+        self.gripper_publisher = self.create_publisher(
+            Float64MultiArray, f"/{GRIPPER_CONTROLLER_NAME}/commands", 10
         )
         self.positions = list(INITIAL_POSITIONS)
         self.gripper_position = INITIAL_GRIPPER_POSITION
         self.selected_joint = 0
 
-    def wait_for_arm_controller(self, timeout_sec: float = CONTROLLER_WAIT_TIMEOUT) -> bool:
+    def wait_for_controllers(self, timeout_sec: float = CONTROLLER_WAIT_TIMEOUT) -> bool:
         client = self.create_client(ListControllers, "/controller_manager/list_controllers")
         deadline = time.monotonic() + timeout_sec
-        self.get_logger().info(f"Waiting for {CONTROLLER_NAME} to become active")
+        self.get_logger().info(f"Waiting for {', '.join(CONTROLLER_NAMES)} to become active")
 
         while rclpy.ok() and time.monotonic() < deadline:
             remaining = deadline - time.monotonic()
@@ -73,15 +74,15 @@ class KeyboardJointTeleop(Node):
             except Exception as error:
                 self.get_logger().warn(f"Could not query controller state: {error}")
                 continue
-            if any(
-                controller.name == CONTROLLER_NAME and controller.state == "active"
-                for controller in controllers
-            ):
+            active_names = {
+                controller.name for controller in controllers if controller.state == "active"
+            }
+            if all(name in active_names for name in CONTROLLER_NAMES):
                 return True
 
             time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
 
-        self.get_logger().error(f"{CONTROLLER_NAME} did not become active")
+        self.get_logger().error(f"{', '.join(CONTROLLER_NAMES)} did not become active")
         return False
 
     def publish_arm(self) -> None:
@@ -94,10 +95,9 @@ class KeyboardJointTeleop(Node):
         self.publish_gripper()
 
     def publish_gripper(self) -> None:
-        message = Float64()
-        message.data = self.gripper_position
-        for publisher in self.gripper_publishers:
-            publisher.publish(message)
+        message = Float64MultiArray()
+        message.data = [self.gripper_position] * len(GRIPPER_JOINT_NAMES)
+        self.gripper_publisher.publish(message)
 
     def change_selected_joint(self, delta: float) -> None:
         lower_limit, upper_limit = JOINT_LIMITS[self.selected_joint]
@@ -139,12 +139,11 @@ def run() -> int:
     original_terminal_settings = termios.tcgetattr(sys.stdin)
 
     try:
-        node.publish_gripper()
-        if not node.wait_for_arm_controller():
+        if not node.wait_for_controllers():
             return 1
 
         tty.setcbreak(sys.stdin.fileno())
-        node.publish_arm()
+        node.publish_all()
         node.print_help()
         node.get_logger().info(
             f"Selected {JOINT_NAMES[node.selected_joint]} "

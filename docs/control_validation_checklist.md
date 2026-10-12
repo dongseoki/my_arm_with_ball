@@ -1,6 +1,6 @@
 # Gazebo 제어 기준 확인 절차
 
-이 문서는 Fixed Joint Waypoint 구현 전 0단계의 실행 검증 절차다. 현재 코드와 SDF를 수정하지 않고, Gazebo에서 수동 조작으로 `HOME`, 관절 방향, RG2 그리퍼 동작을 확인한다.
+이 문서는 Fixed Joint Waypoint 구현 전 0단계의 수동 검증 기록이다. 아래 키보드 실행 방법은 현재 launch 구성에 맞춘다. 과거 확인 결과는 당시의 관찰로 읽는다.
 
 ## 1. 실행
 
@@ -8,13 +8,13 @@
 
 ```bash
 cd /home/dslee/workspace/my_arm_with_ball
-source /opt/ros/$ROS_DISTRO/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build
 source install/setup.bash
-ros2 launch my_arm_with_ball_bringup simulation.launch.py keyboard:=true rviz:=false
+ros2 launch my_arm_with_ball_bringup simulation.launch.py headless:=true rviz:=false
 ```
 
-`keyboard:=true`를 지정해야 키보드 입력 노드가 실행된다. 명령을 실행한 인터랙티브 터미널에서 아래 키를 입력한다.
+별도 인터랙티브 터미널에서 같은 ROS 및 워크스페이스 환경을 적용한 뒤 `ros2 run my_arm_with_ball_application keyboard_joint_teleop`을 실행한다. 그 터미널에서 아래 키를 입력한다. 화면에서 움직임을 확인하려면 launch의 `headless:=false`를 사용한다.
 
 | 키 | 동작 |
 |---|---|

@@ -131,17 +131,17 @@
     <parent link="wrist_3_link"/><child link="rg2_hand"/>
     <origin xyz="0 0.0823 0" rpy="1.570796325 0 1.570796325"/>
   </joint>
-  <xacro:macro name="finger_joint" params="name child xyz axis">
+  <xacro:macro name="finger_joint" params="name child xyz axis lower:=0.0">
     <joint name="${name}" type="revolute">
       <parent link="rg2_hand"/><child link="${child}"/>
       <origin xyz="${xyz}" rpy="0 0 0"/>
       <axis xyz="${axis}"/>
-      <limit lower="0.0" upper="1.18" effort="10.6" velocity="1.57"/>
+      <limit lower="${lower}" upper="1.18" effort="10.6" velocity="1.57"/>
       <dynamics damping="1" friction="0.005"/>
     </joint>
   </xacro:macro>
   <xacro:finger_joint name="rg2_finger_joint1" child="rg2_leftfinger" xyz="0.105 0.017 0" axis="0 0 1"/>
-  <xacro:finger_joint name="rg2_finger_joint2" child="rg2_rightfinger" xyz="0.105 -0.017 0" axis="0 0 -1"/>
+  <xacro:finger_joint name="rg2_finger_joint2" child="rg2_rightfinger" xyz="0.105 -0.017 0" axis="0 0 -1" lower="-0.001"/>
   <joint name="end_effector_frame_fixed_joint" type="fixed">
     <parent link="wrist_3_link"/><child link="tool0"/>
     <origin xyz="0 0.275 0" rpy="-1.570796325 0 0"/>
@@ -154,8 +154,9 @@
       <state_interface name="velocity"/>
     </joint>
   </xacro:macro>
-  <xacro:macro name="measured_finger_joint" params="name">
+  <xacro:macro name="controlled_finger_joint" params="name">
     <joint name="${name}">
+      <command_interface name="position"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
@@ -168,7 +169,7 @@
     <xacro:controlled_arm_joint name="wrist_1_joint"/>
     <xacro:controlled_arm_joint name="wrist_2_joint"/>
     <xacro:controlled_arm_joint name="wrist_3_joint"/>
-    <xacro:measured_finger_joint name="rg2_finger_joint1"/>
-    <xacro:measured_finger_joint name="rg2_finger_joint2"/>
+    <xacro:controlled_finger_joint name="rg2_finger_joint1"/>
+    <xacro:controlled_finger_joint name="rg2_finger_joint2"/>
   </ros2_control>
 </robot>
