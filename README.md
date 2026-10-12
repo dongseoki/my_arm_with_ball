@@ -68,15 +68,16 @@ rm -rf build install log
     ros2 launch my_arm_with_ball_bringup simulation.launch.py
     ```
 
-The launch file starts Gazebo, the ROS-Gazebo bridge, robot_state_publisher,
-and the two ros2_control controller spawners. Gazebo loads the controller
-manager through the `gz_ros2_control` model plugin. RViz and keyboard
-teleoperation are run separately.
+The launch file starts Gazebo, RViz, the ROS-Gazebo bridge,
+robot_state_publisher, and the two ros2_control controller spawners. Gazebo
+loads the controller manager through the `gz_ros2_control` model plugin.
+RViz shows the robot model using `/robot_description` and `/joint_states`.
+Keyboard teleoperation is run separately. Use `rviz:=false` to omit RViz.
 
 For a machine without a display, run `ros2 launch my_arm_with_ball_bringup
-simulation.launch.py headless:=true`. The launch sets Gazebo's working
-directory to the installed bringup package so the SDF plugin can load its
-controller YAML through a relative path.
+simulation.launch.py headless:=true`. This also disables RViz by default.
+The launch sets Gazebo's working directory to the installed bringup package
+so the SDF plugin can load its controller YAML through a relative path.
 
 ## UR5 RG2 keyboard control
 

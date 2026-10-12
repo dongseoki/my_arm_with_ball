@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, RegisterEventHandler
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command, FindExecutable, LaunchConfiguration
+from launch.substitutions import Command, FindExecutable, IfElseSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -64,6 +64,15 @@ def generate_launch_description():
         output="screen",
     )
 
+    rviz = Node(
+        package="rviz2",
+        executable="rviz2",
+        arguments=["-d", os.path.join(pkg_bringup, "config", "ur5_rg2.rviz")],
+        parameters=[{"use_sim_time": True}],
+        condition=IfCondition(LaunchConfiguration("rviz")),
+        output="screen",
+    )
+
     joint_state_broadcaster = Node(
         package="controller_manager",
         executable="spawner",
@@ -98,10 +107,16 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("headless", default_value="false"),
+            DeclareLaunchArgument(
+                "rviz",
+                default_value=IfElseSubstitution(LaunchConfiguration("headless"), "false", "true"),
+                description="Start RViz2 with the UR5/RG2 robot model.",
+            ),
             gazebo,
             gazebo_headless,
             bridge,
             robot_state_publisher,
+            rviz,
             joint_state_broadcaster,
             RegisterEventHandler(
                 OnProcessExit(
