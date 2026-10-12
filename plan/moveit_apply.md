@@ -52,17 +52,19 @@ UR5 + RG2가 Gazebo Sim에서 월드에 고정 배치된 공을 집어 바구니
 
 **작업**
 
-- 사용 중인 ROS 2 배포판, Gazebo Sim, MoveIt 2, `ros_gz` 버전을 기록하고 공식 호환 조합을 확인한다.
-- Xacro에서 planning group에 필요한 팔 관절, 그리퍼 관절, `base_link`, `tool0`를 확인한다.
-- SRDF의 팔/그리퍼 그룹, 기본 자세, self-collision matrix를 구성한다.
-- URDF/Xacro의 충돌 형상과 관절 한계가 MoveIt 계획에 적절한지 확인한다.
-- SDF 월드의 공·바구니 위치를 월드 프레임에서 읽을 수 있는 고정 작업 목표로 정리한다.
+- [x] 사용 중인 ROS 2 배포판, Gazebo Sim, MoveIt 2, `ros_gz` 버전을 기록하고 공식 호환 조합을 확인한다. Ubuntu 24.04.5 / ROS 2 Jazzy / Gazebo Harmonic (`gz-sim` 8.15.0) / MoveIt 2 2.12.4 / `ros_gz` 1.0.24 / `gz_ros2_control` 1.2.20을 확인했다.
+- [x] Xacro에서 planning group 후보 팔 6축, gripper 2축, `base_link`, `tool0`, `rg2_hand`를 확인한다. 실제 EEF tip은 `rg2_hand`로 정하고 `tool0`는 보조 프레임으로 둔다.
+- [x] 그룹과 시작 자세 후보를 정한다: `ur5` 6축, `gripper` 2축, 명목 `home`은 8개 관절 모두 0 rad다. URDF root가 `world`이고 고정 변환으로 `base_link`에 연결되므로 planning frame은 `world`, 별도 virtual joint는 두지 않는다.
+- [x] URDF/Xacro의 충돌 형상과 관절 한계를 확인한다. MoveIt Setup Assistant에서 robot model 및 package URI mesh를 읽고, SDF/Xacro consistency 검사 4개 항목이 통과했다.
+- [x] SDF 월드의 공·바구니 pose를 월드 기준 목표로 기록하고, 공 반지름과 바구니 mesh AABB를 조사했다. 바구니 유효 내부 경계는 미확정으로 단계 2/6에 넘긴다.
+- [ ] SRDF 파일 작성 및 self-collision matrix 생성·검토는 MoveIt 설정 패키지를 만드는 2단계에서 수행한다.
 
 **완료 조건**
 
-- 지원되는 의존성 조합과 설치 방법을 확정한다.
-- MoveIt이 로봇 모델을 로드하고 팔의 시작 자세 및 목표 자세를 표현할 수 있다.
-- 계획 프레임, 로봇 베이스 프레임, end-effector 프레임의 관계를 확인한다.
+- [x] 지원되는 의존성 조합과 설치 방법을 확정한다. 현재 설치된 Jazzy 바이너리와 Jazzy/Harmonic 공식 지원 조합을 유지한다.
+- [x] MoveIt Setup Assistant가 Xacro URDF와 collision mesh를 로드하고, 시뮬레이션에서 팔 시작 관절 상태가 명목 0 rad임을 확인한다. 작업 목표는 월드 frame 좌표로 표현할 수 있게 정리했다.
+- [x] 계획 프레임 `world`, 로봇 베이스 `base_link`, end-effector 기준 `rg2_hand`와 보조 `tool0` 사이 관계를 확인한다.
+- [ ] SRDF 그룹/자세와 충돌행렬의 실제 생성·검토는 단계 2에서 완료한다. 바구니 내부 경계도 충돌/놓기 판정 기준을 확정할 때 추가 조사한다.
 
 ### 단계 2 — MoveIt 설정 패키지와 RViz 계획 검증
 
