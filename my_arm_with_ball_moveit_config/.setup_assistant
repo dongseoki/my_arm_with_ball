@@ -1,0 +1,6 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: my_arm_with_ball_description
+    relative_path: urdf/ur5_rg2.urdf.xacro
+  srdf:
+    relative_path: config/ur5_rg2.srdf

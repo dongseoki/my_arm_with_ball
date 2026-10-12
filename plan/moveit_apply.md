@@ -57,29 +57,31 @@ UR5 + RG2가 Gazebo Sim에서 월드에 고정 배치된 공을 집어 바구니
 - [x] 그룹과 시작 자세 후보를 정한다: `ur5` 6축, `gripper` 2축, 명목 `home`은 8개 관절 모두 0 rad다. URDF root가 `world`이고 고정 변환으로 `base_link`에 연결되므로 planning frame은 `world`, 별도 virtual joint는 두지 않는다.
 - [x] URDF/Xacro의 충돌 형상과 관절 한계를 확인한다. MoveIt Setup Assistant에서 robot model 및 package URI mesh를 읽고, SDF/Xacro consistency 검사 4개 항목이 통과했다.
 - [x] SDF 월드의 공·바구니 pose를 월드 기준 목표로 기록하고, 공 반지름과 바구니 mesh AABB를 조사했다. 바구니 유효 내부 경계는 미확정으로 단계 2/6에 넘긴다.
-- [ ] SRDF 파일 작성 및 self-collision matrix 생성·검토는 MoveIt 설정 패키지를 만드는 2단계에서 수행한다.
+- [x] SRDF 파일 작성 및 self-collision matrix 생성·검토를 2단계에서 완료했다. 상세 판정은 [`m_2_plan.md`](m_2_plan.md)에 기록했다.
 
 **완료 조건**
 
 - [x] 지원되는 의존성 조합과 설치 방법을 확정한다. 현재 설치된 Jazzy 바이너리와 Jazzy/Harmonic 공식 지원 조합을 유지한다.
 - [x] MoveIt Setup Assistant가 Xacro URDF와 collision mesh를 로드하고, 시뮬레이션에서 팔 시작 관절 상태가 명목 0 rad임을 확인한다. 작업 목표는 월드 frame 좌표로 표현할 수 있게 정리했다.
 - [x] 계획 프레임 `world`, 로봇 베이스 `base_link`, end-effector 기준 `rg2_hand`와 보조 `tool0` 사이 관계를 확인한다.
-- [ ] SRDF 그룹/자세와 충돌행렬의 실제 생성·검토는 단계 2에서 완료한다. 바구니 내부 경계도 충돌/놓기 판정 기준을 확정할 때 추가 조사한다.
+- [x] SRDF 그룹/자세와 충돌행렬을 생성·검토했다. 바구니는 원본 내부 표면을 포함한 mesh를 충돌 모델로 사용하며, containment 판정에 필요한 수치 기준은 단계 6에서 정한다.
 
 ### 단계 2 — MoveIt 설정 패키지와 RViz 계획 검증
 
 **작업**
 
-- 프로젝트 관례에 맞는 MoveIt 설정 패키지를 추가하고 URDF/Xacro, SRDF, kinematics, joint limits, planning pipeline, RViz 설정을 구성한다.
-- 기존 Gazebo 실행과 별도로 MoveIt/RViz 계획 검증을 실행할 수 있게 한다.
-- 팔의 시작 자세에서 공 접근 자세, 바구니 위 자세까지 충돌 없는 경로를 계획한다.
-- 공과 바구니를 MoveIt Planning Scene의 충돌 물체로 등록한다. 집기 전후의 공 상태는 다음 단계의 attach/detach 처리와 일관되게 갱신한다.
+- [x] 전용 MoveIt 설정 패키지를 추가하고 URDF/Xacro, SRDF, kinematics, joint limits, OMPL, RViz 설정을 구성한다.
+- [x] Gazebo 실행과 별도로 MoveIt/RViz 계획 검증을 실행할 수 있게 한다.
+- [x] 팔 시작 자세에서 공 접근, lift, 바구니 위 목표까지 충돌 없는 경로를 계획하고 궤적 중간 상태를 검사한다.
+- [x] 공과 바구니를 MoveIt Planning Scene의 충돌 물체로 등록한다. Gazebo 부착/분리와 attached-object 갱신은 4단계에서 구현한다.
 
 **완료 조건**
 
-- RViz MotionPlanning에서 UR5 그룹의 목표를 지정하고 유효한 경로를 계획할 수 있다.
-- 계획 경로가 로봇 자기 충돌, 공, 바구니와 충돌하지 않는다.
-- 현재 SDF 위치를 기준으로 한 작업 포즈가 도달 가능하거나, 도달 불가 원인이 특정된다.
+- [x] RViz MotionPlanning 및 MoveGroup 계획 서비스가 UR5 그룹과 목표를 처리하고 유효한 경로를 만든다.
+- [x] 검증한 계획 경로가 로봇 자기 충돌, 공, 바구니와 충돌하지 않는다. 공/바구니에 의도적으로 겹치는 음성 대조 상태는 충돌로 판정됐다.
+- [x] 현재 SDF 위치 기준의 공 접근, lift, 바구니 위 작업 포즈가 도달 가능함을 확인했다.
+
+단계 2 구현·검증 기록과 알려진 제한은 [`m_2_plan.md`](m_2_plan.md)에 있다. 계획 전용 launch에서 Gazebo 궤적 실행 action은 활성화하지 않았다.
 
 ### 단계 3 — Gazebo ros2_control과 MoveIt 실행 인터페이스 연결
 
