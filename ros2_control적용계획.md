@@ -9,10 +9,10 @@
 ## 2. 합의한 적용 범위
 
 - UR5 팔의 6개 관절에 ros2_control을 적용한다.
-- RG2 그리퍼는 기존 제어 방식을 유지한다.
+- RG2 그리퍼의 명령은 기존 제어 방식을 유지하고, 상태만 ros2_control의 읽기 전용 인터페이스에 포함한다.
 - 키보드의 `1~6`, `a/d`, `r/x` 조작을 유지한다.
 - 그리퍼의 `o/c` 조작을 유지한다.
-- MoveIt 적용, 실제 로봇 연결, 그리퍼의 ros2_control 전환은 이번 단계의 범위에 포함하지 않는다.
+- MoveIt 적용, 실제 로봇 연결, 그리퍼 명령의 ros2_control 전환은 이번 단계의 범위에 포함하지 않는다.
 - 공을 집어 바구니에 놓는 자동 동작은 이번 단계의 완료 조건에 포함하지 않는다.
 
 대상 관절과 키보드 선택 번호:
@@ -26,7 +26,7 @@
 | 5 | `wrist_2_joint` |
 | 6 | `wrist_3_joint` |
 
-## 3. 현재 프로젝트 구조
+## 3. 전환 전 프로젝트 구조
 
 현재 로봇은 `my_arm_with_ball_description/models/ur5_rg2/model.sdf`에 정의되어 있으며, Gazebo 월드에서 불러온다.
 
@@ -67,9 +67,19 @@ keyboard_joint_teleop
   → UR5의 6개 관절
 ```
 
-팔의 실제 관절 상태는 ros2_control의 상태 인터페이스를 통해 읽고 `/joint_states`에서 확인한다. 그리퍼 명령은 기존 ROS–Gazebo 브리지 경로를 유지한다.
+팔과 그리퍼의 실제 관절 상태는 ros2_control의 상태 인터페이스를 통해 읽고, 하나의 `joint_state_broadcaster`가 8개 관절을 `/joint_states`로 제공한다. 그리퍼에는 명령 인터페이스를 추가하지 않으며, 그리퍼 명령은 기존 ROS–Gazebo 브리지 경로를 유지한다.
 
-컨트롤러 종류, Gazebo 연동 패키지, 로봇 설명 형식은 아직 확정하지 않았다. 설치된 ROS 2/Gazebo 버전과 공식 문서, 현재 SDF 구조를 확인한 뒤 선택 이유를 설명한다.
+1단계에서 확정한 구성:
+
+- 환경: ROS 2 Jazzy, Gazebo Harmonic (`gz-sim8`), 설치된 `gz_ros2_control` 사용.
+- 하드웨어 인터페이스: `gz_ros2_control/GazeboSimSystem`.
+- 팔 컨트롤러: `forward_command_controller/ForwardCommandController`, `position` 인터페이스.
+- 팔 명령: `/arm_position_controller/commands`에 `std_msgs/msg/Float64MultiArray`로 위 표 순서의 6개 목표각 전달. 이동 시간은 지정하지 않는다.
+- 초기화: 키보드 노드 시작 시 기존처럼 모든 팔 관절에 `0.0` rad 목표를 명령한다. `r/x` 목표와 기존 키 조작은 유지한다. 키보드 명령 전환은 3단계에서 구현한다.
+- 모델: 기존 물리 SDF와 world 고정을 유지하고, 파서에 맞는 제어용 설명을 별도로 제공한다. 전체 URDF 변환을 필수로 가정하지 않는다.
+- 독점 제어: ros2_control 활성화 전에 기존 팔 Gazebo 제어 플러그인 6개를 비활성화한다. 그리퍼 플러그인 2개는 유지한다.
+- 상태: 팔 6개와 그리퍼 2개의 실제 상태를 하나의 broadcaster로 제공하고 기존 `/joint_states` 브리지를 대체해 중복을 방지한다.
+ Gazebo 연결 및 그리퍼 상태 공존은 2단계에서 검증한다.
 
 ## 5. 단계별 실습 계획
 
