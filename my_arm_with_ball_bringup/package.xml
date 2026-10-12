@@ -9,11 +9,13 @@
   <author>Michael Carroll</author>
   <author>Dharini Dutia</author>
 
-  <depend>joint_state_publisher_gui</depend>
-
-  <depend>ros_gz</depend>
-  <depend>sdformat_urdf</depend>
-  <depend>my_arm_with_ball_application</depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>forward_command_controller</exec_depend>
+  <exec_depend>gz_ros2_control</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>xacro</exec_depend>
   <depend>my_arm_with_ball_description</depend>
   <depend>my_arm_with_ball_gazebo</depend>
 

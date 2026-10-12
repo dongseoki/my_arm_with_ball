@@ -1,0 +1,174 @@
+<?xml version="1.0"?>
+<!-- Independent ROS description. Keep geometry and kinematics aligned with models/ur5_rg2/model.sdf.
+     Mesh source: https://fuel.gazebosim.org/1.0/anni/models/ur5_rg2/1 (CC BY 4.0). -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur5_rg2">
+  <xacro:property name="mesh_root" value="package://my_arm_with_ball_description/models/ur5_rg2/meshes"/>
+
+  <xacro:macro name="mesh_link" params="name mesh visual_rpy:='0 0 0' *inertial">
+    <link name="${name}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${visual_rpy}"/>
+        <geometry><mesh filename="${mesh_root}/visual/${mesh}.dae"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${visual_rpy}"/>
+        <geometry><mesh filename="${mesh_root}/collision/${mesh}.stl"/></geometry>
+      </collision>
+      <xacro:insert_block name="inertial"/>
+    </link>
+  </xacro:macro>
+
+  <link name="world"/>
+  <joint name="ur5_rg2_joint_world" type="fixed">
+    <parent link="world"/><child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <xacro:mesh_link name="base_link" mesh="ur5/base">
+    <inertial>
+      <origin xyz="-7.83914e-07 0.00442178 0.184343" rpy="0 0 0"/>
+      <mass value="4.210389694173812"/>
+      <inertia ixx="0.09309670560602573" iyy="0.09257037651287492" izz="0.004310645613985299"
+               ixy="5.711270872759674e-09" ixz="2.0039833861772347e-07" iyz="0.0047053532779924665"/>
+    </inertial>
+  </xacro:mesh_link>
+  <xacro:mesh_link name="shoulder_link" mesh="ur5/shoulder">
+    <inertial>
+      <origin xyz="-3.81853e-06 0.00927291 -0.0018563" rpy="0 0 0"/>
+      <mass value="2.6078628081050645"/>
+      <inertia ixx="0.00615890739477387" iyy="0.005562932983198189" izz="0.005255082470414319"
+               ixy="8.486678716437087e-07" ixz="1.436028981488676e-07" iyz="-0.00018809980689883695"/>
+    </inertial>
+  </xacro:mesh_link>
+  <xacro:mesh_link name="upper_arm_link" mesh="ur5/upperarm">
+    <inertial>
+      <origin xyz="9.68139e-10 -0.00107158 0.2125" rpy="0 0 0"/>
+      <mass value="9.034556202946057"/>
+      <inertia ixx="0.2566537454248199" iyy="0.25483850258961777" izz="0.016022276702360172"
+               ixy="-2.2173460061911962e-09" ixz="2.3397723734924104e-06" iyz="5.701897149736449e-09"/>
+    </inertial>
+  </xacro:mesh_link>
+  <xacro:mesh_link name="forearm_link" mesh="ur5/forearm">
+    <inertial>
+      <origin xyz="-7.83914e-07 0.00442178 0.184343" rpy="0 0 0"/>
+      <mass value="4.210389694173812"/>
+      <inertia ixx="0.09309670560602573" iyy="0.09257037651287492" izz="0.004310645613985299"
+               ixy="5.711270872759674e-09" ixz="2.0039833861772347e-07" iyz="0.0047053532779924665"/>
+    </inertial>
+  </xacro:mesh_link>
+  <xacro:mesh_link name="wrist_1_link" mesh="ur5/wrist1">
+    <inertial>
+      <origin xyz="2.12195e-06 0.0886236 -0.00357675" rpy="0 0 0"/>
+      <mass value="0.8652783044597422"/>
+      <inertia ixx="0.0011006744464830784" iyy="0.0010246557119841899" izz="0.0007125213984803068"
+               ixy="-4.062057055066431e-08" ixz="-2.441133081746347e-08" iyz="1.000924524333879e-05"/>
+    </inertial>
+  </xacro:mesh_link>
+  <xacro:mesh_link name="wrist_2_link" mesh="ur5/wrist2">
+    <inertial>
+      <origin xyz="-2.12306e-06 -0.00357678 0.0901045" rpy="0 0 0"/>
+      <mass value="0.8652786866955592"/>
+      <inertia ixx="0.0010980920821000012" iyy="0.0007099378137563144" izz="0.0010246570857519936"
+               ixy="2.436032506659575e-08" ixz="4.047086050601145e-08" iyz="4.96085194908414e-06"/>
+    </inertial>
+  </xacro:mesh_link>
+  <xacro:mesh_link name="wrist_3_link" mesh="ur5/wrist3">
+    <inertial>
+      <origin xyz="8.12548e-09 0.0630914 0.000189932" rpy="0 0 0"/>
+      <mass value="0.23285976783205536"/>
+      <inertia ixx="0.00010068520800989181" iyy="0.00016016377462915846" izz="9.951199288758246e-05"
+               ixy="-1.3195380569038253e-11" ixz="2.0466677535340047e-11" iyz="3.421454203362164e-08"/>
+    </inertial>
+  </xacro:mesh_link>
+  <xacro:mesh_link name="rg2_hand" mesh="rg2/hand">
+    <inertial>
+      <origin xyz="0.057581 -0.000169308 -3.3334e-05" rpy="0 0 0"/>
+      <mass value="0.29881464108881906"/>
+      <inertia ixx="0.00010934311942148434" iyy="0.0003327568173229071" izz="0.00037338963627732164"
+               ixy="2.4297126288189813e-07" ixz="5.3958894994201004e-08" iyz="2.4899876853227836e-07"/>
+    </inertial>
+  </xacro:mesh_link>
+  <xacro:mesh_link name="rg2_leftfinger" mesh="rg2/finger">
+    <inertial>
+      <origin xyz="-0.0176873 -0.00819142 -4.15573e-05" rpy="0 0 0"/>
+      <mass value="0.24059267945559043"/>
+      <inertia ixx="3.3970932890017096e-05" iyy="0.00029230476124314346" izz="0.00030917405435097734"
+               ixy="-4.8854610840491595e-05" ixz="-1.1765879805737544e-08" iyz="1.6350676533062336e-08"/>
+    </inertial>
+  </xacro:mesh_link>
+  <xacro:mesh_link name="rg2_rightfinger" mesh="rg2/finger" visual_rpy="3.141592653589793 0 0">
+    <inertial>
+      <origin xyz="-0.0176873 -0.00819142 -4.15573e-05" rpy="3.141592653589793 0 0"/>
+      <mass value="0.24059267945559043"/>
+      <inertia ixx="3.3970932890017096e-05" iyy="0.00029230476124314346" izz="0.00030917405435097734"
+               ixy="-4.8854610840491595e-05" ixz="-1.1765879805737544e-08" iyz="1.6350676533062336e-08"/>
+    </inertial>
+  </xacro:mesh_link>
+  <link name="tool0"/>
+
+  <xacro:macro name="arm_joint" params="name parent child xyz axis effort velocity damping friction">
+    <joint name="${name}" type="revolute">
+      <parent link="${parent}"/><child link="${child}"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+      <axis xyz="${axis}"/>
+      <limit lower="-6.28319" upper="6.28319" effort="${effort}" velocity="${velocity}"/>
+      <dynamics damping="${damping}" friction="${friction}"/>
+    </joint>
+  </xacro:macro>
+  <xacro:arm_joint name="shoulder_pan_joint" parent="base_link" child="shoulder_link"
+                  xyz="0 0 0.089159" axis="0 0 1" effort="150" velocity="3.15" damping="30" friction="4"/>
+  <xacro:arm_joint name="shoulder_lift_joint" parent="shoulder_link" child="upper_arm_link"
+                  xyz="0 0.13585 0" axis="0 1 0" effort="150" velocity="3.15" damping="45" friction="6"/>
+  <xacro:arm_joint name="elbow_joint" parent="upper_arm_link" child="forearm_link"
+                  xyz="0 -0.1197 0.425" axis="0 1 0" effort="150" velocity="3.15" damping="35" friction="5"/>
+  <xacro:arm_joint name="wrist_1_joint" parent="forearm_link" child="wrist_1_link"
+                  xyz="0 0 0.39225" axis="0 1 0" effort="28" velocity="3.2" damping="25" friction="3.5"/>
+  <xacro:arm_joint name="wrist_2_joint" parent="wrist_1_link" child="wrist_2_link"
+                  xyz="0 0.093 0" axis="0 0 1" effort="28" velocity="3.2" damping="20" friction="2.5"/>
+  <xacro:arm_joint name="wrist_3_joint" parent="wrist_2_link" child="wrist_3_link"
+                  xyz="0 0 0.09465" axis="0 1 0" effort="28" velocity="3.2" damping="15" friction="1.75"/>
+  <joint name="ur5_hand_joint" type="fixed">
+    <parent link="wrist_3_link"/><child link="rg2_hand"/>
+    <origin xyz="0 0.0823 0" rpy="1.570796325 0 1.570796325"/>
+  </joint>
+  <xacro:macro name="finger_joint" params="name child xyz axis">
+    <joint name="${name}" type="revolute">
+      <parent link="rg2_hand"/><child link="${child}"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+      <axis xyz="${axis}"/>
+      <limit lower="0.0" upper="1.18" effort="10.6" velocity="1.57"/>
+      <dynamics damping="1" friction="0.005"/>
+    </joint>
+  </xacro:macro>
+  <xacro:finger_joint name="rg2_finger_joint1" child="rg2_leftfinger" xyz="0.105 0.017 0" axis="0 0 1"/>
+  <xacro:finger_joint name="rg2_finger_joint2" child="rg2_rightfinger" xyz="0.105 -0.017 0" axis="0 0 -1"/>
+  <joint name="end_effector_frame_fixed_joint" type="fixed">
+    <parent link="wrist_3_link"/><child link="tool0"/>
+    <origin xyz="0 0.275 0" rpy="-1.570796325 0 0"/>
+  </joint>
+
+  <xacro:macro name="controlled_arm_joint" params="name">
+    <joint name="${name}">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </xacro:macro>
+  <xacro:macro name="measured_finger_joint" params="name">
+    <joint name="${name}">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </xacro:macro>
+  <ros2_control name="GazeboSimSystem" type="system">
+    <hardware><plugin>gz_ros2_control/GazeboSimSystem</plugin></hardware>
+    <xacro:controlled_arm_joint name="shoulder_pan_joint"/>
+    <xacro:controlled_arm_joint name="shoulder_lift_joint"/>
+    <xacro:controlled_arm_joint name="elbow_joint"/>
+    <xacro:controlled_arm_joint name="wrist_1_joint"/>
+    <xacro:controlled_arm_joint name="wrist_2_joint"/>
+    <xacro:controlled_arm_joint name="wrist_3_joint"/>
+    <xacro:measured_finger_joint name="rg2_finger_joint1"/>
+    <xacro:measured_finger_joint name="rg2_finger_joint2"/>
+  </ros2_control>
+</robot>

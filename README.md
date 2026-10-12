@@ -68,17 +68,22 @@ rm -rf build install log
     ros2 launch my_arm_with_ball_bringup simulation.launch.py
     ```
 
-The launch file starts Gazebo, the ROS-Gazebo bridge, and RViz2. Keyboard
-teleoperation is disabled by default because it requires a dedicated
-interactive terminal:
+The launch file starts Gazebo, the ROS-Gazebo bridge, robot_state_publisher,
+and the two ros2_control controller spawners. Gazebo loads the controller
+manager through the `gz_ros2_control` model plugin. RViz and keyboard
+teleoperation are run separately.
 
-```bash
-ros2 launch my_arm_with_ball_bringup simulation.launch.py rviz:=false
-```
+For a machine without a display, run `ros2 launch my_arm_with_ball_bringup
+simulation.launch.py headless:=true`. The launch sets Gazebo's working
+directory to the installed bringup package so the SDF plugin can load its
+controller YAML through a relative path.
 
 ## UR5 RG2 keyboard control
 
-In a second terminal, run the keyboard node after the simulation is started:
+The keyboard node has not yet been switched to the arm controller's command
+topic. Until that step is implemented, its `1`–`6`, `a/d`, `r/x` arm commands
+do not move the arm. The `o/c` gripper commands still use the Gazebo bridge.
+In a second terminal, run it for gripper control:
 
 ```bash
 source /opt/ros/$ROS_DISTRO/setup.bash
@@ -100,24 +105,23 @@ then change its target position in 0.05 rad increments:
 | `x` | Reset all UR5 joints and the gripper |
 | `q` | Quit the keyboard node |
 
-The node clamps commands to the UR5 and RG2 joint limits and publishes
-`std_msgs/msg/Float64` on `/ur5_<joint_name>/cmd_pos` and
-`/rg2_finger_joint{1,2}/cmd_pos`. The bridge forwards each topic to the
-corresponding Gazebo command topic:
+The arm controller accepts six target positions in joint order
+`shoulder_pan_joint`, `shoulder_lift_joint`, `elbow_joint`, `wrist_1_joint`,
+`wrist_2_joint`, `wrist_3_joint`. To test the new arm path before the keyboard
+node is updated:
 
 ```bash
-ros2 topic echo /ur5_wrist_3_joint/cmd_pos
-gz topic -e -t /model/ur5_rg2/joint/wrist_3_joint/0/cmd_pos
+ros2 topic pub --once /arm_position_controller/commands std_msgs/msg/Float64MultiArray '{data: [0.1, 0.0, 0.0, 0.0, 0.0, 0.0]}'
 ```
 
-The Gazebo model publishes the measured joint states at 100 Hz. The bridge
-converts them to `sensor_msgs/msg/JointState` on `/joint_states`. Use this
-topic to compare the commanded target with the actual simulated position:
+The `joint_state_broadcaster` publishes the measured arm and gripper state on
+`/joint_states`. Check the controller and state topics with:
 
 ```bash
+ros2 control list_controllers
+ros2 control list_hardware_interfaces
 ros2 topic echo /joint_states
 ros2 topic info /joint_states -v
-gz topic -e -t /world/arm_world/model/ur5_rg2/joint_state
 ```
 
 The local `ur5_rg2` model is based on
@@ -135,17 +139,11 @@ The `BasicSystem` and `FullSystem` sources in `my_arm_with_ball_gazebo` remain
 template Gazebo system scaffolds; keyboard control does not require either
 plugin.
 
-# sdf만 수정한경우
+# Build after changing the robot model or controllers
 ```sh
-colcon build --packages-select my_arm_with_ball_gazebo --symlink-install
+colcon build --packages-select my_arm_with_ball_description my_arm_with_ball_bringup --symlink-install
 source install/setup.bash
 ros2 launch my_arm_with_ball_bringup simulation.launch.py
-```
-
-# gazebo 로봇팔 테스트 명령어
-```위아래로 고개 흔들기
-dslee@dslee-To-Be-Filled-By-O-E-M:~/workspace/my_arm_with_ball$ gz topic -t /model/ur5_rg2/joint/wrist_3_joint/0/cmd_pos   -m gz.msgs.Double   -p 'data: -2'
-
 ```
 ## 각 조인트 위치 참고
 https://chatgpt.com/share/6aad354b-b584-83ee-bf4e-08efa79133ac
