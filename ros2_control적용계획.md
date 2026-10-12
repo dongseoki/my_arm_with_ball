@@ -1,6 +1,6 @@
 # ros2_control 적용 계획
 
-진행 현황: **0·1·2·3단계 완료, 4단계 통합 검증 및 5단계 그리퍼 전환 미완료**.
+진행 현황: **0·1·2·3·4단계 기술 검증 완료, 5단계 그리퍼 전환 미완료**.
 Gazebo에서 두 컨트롤러의 활성화, 키보드 팔 명령의 실제 이동, 그리퍼 `o/c` 동작과 8개 관절의 `/joint_states` 발행을 확인했다.
 
 ## 1. 목표와 진행 방식
@@ -128,14 +128,27 @@ Gazebo에서 `1~6` 관절 선택과 명령·재설정, 그리퍼 `o/c`의 실제
 
 ### 4단계: 통합 검증과 실습 정리
 
-- [ ] 6개 관절을 각각 선택해 `a/d` 움직임을 확인한다.
-- [ ] `r`과 `x`의 재설정 결과를 확인한다.
+- [x] 6개 관절을 각각 선택해 `a/d` 움직임을 확인한다.
+- [x] `r`과 `x`의 재설정 결과를 확인한다.
 - [x] 실제 팔 관절 위치가 `/joint_states`에 반영되는지 확인한다.
-- [ ] 그리퍼 `o/c`가 기존처럼 동작하는지 확인한다.
-- [ ] 시뮬레이션을 다시 실행해 컨트롤러 활성화와 키보드 조작이 재현되는지 확인한다.
-- [ ] 변경한 패키지의 빌드와 관련 검사를 실행하고, 실행 방법 및 확인 명령을 정리한다.
+- [x] 그리퍼 `o/c`가 기존처럼 동작하는지 확인한다.
+- [x] 시뮬레이션을 다시 실행해 컨트롤러 활성화와 키보드 조작이 재현되는지 확인한다.
+- [x] 변경한 패키지의 빌드와 관련 검사를 실행하고, 실행 방법 및 확인 명령을 정리한다.
 
-확인 결과: 아래 완료 기준을 만족하고 사용자가 제어 흐름을 설명할 수 있다.
+확인 결과 (2026-10-12, `headless:=true`): 키보드 `1~6`에서 각 관절의 `d` 입력 후 실제 위치가 약 `0.05` rad, `a` 입력 후 약 `0` rad로 돌아왔다. `r`은 선택한 관절을 `0.05 → 0` rad로, `x`는 팔과 그리퍼를 초기 목표인 `0`으로 되돌렸다. `o`에서는 두 그리퍼 관절이 약 `1.18` rad, `c`에서는 약 `0` rad였다. 이 값은 `/joint_states`에서 측정했다. 시뮬레이션을 종료하고 다시 실행한 뒤 두 컨트롤러가 `active`, `/joint_states` 발행자가 `joint_state_broadcaster` 하나임을 확인했고, 키보드 `1d` 입력의 `0 → 0.05` rad 이동도 재현했다. 헤드리스 실행이므로 화면에서 보이는 자세와 충돌 여부는 이 검증에 포함하지 않았다. 제어 흐름에 대한 사용자의 이해 여부는 함께 확인할 항목으로 남긴다.
+
+실행 및 확인 명령 (프로젝트 루트):
+
+```bash
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select my_arm_with_ball_description my_arm_with_ball_gazebo my_arm_with_ball_bringup my_arm_with_ball_application --symlink-install
+source install/setup.bash
+colcon test --packages-select my_arm_with_ball_description my_arm_with_ball_gazebo my_arm_with_ball_bringup my_arm_with_ball_application
+colcon test-result --verbose
+ros2 launch my_arm_with_ball_bringup simulation.launch.py headless:=true rviz:=false
+```
+
+별도 터미널에서 같은 ROS 및 워크스페이스 환경을 적용한 뒤 `ros2 run my_arm_with_ball_application keyboard_joint_teleop`을 실행한다. 상태 확인에는 `ros2 control list_controllers`, `ros2 topic info /joint_states -v`, `ros2 topic echo /joint_states`를 사용한다. 이번 실행에서 네 패키지 빌드와 검사 3개가 모두 통과했다.
 
 ### 5단계: RG2 그리퍼 명령의 ros2_control 전환 (후속 작업)
 
@@ -167,4 +180,4 @@ Gazebo에서 `1~6` 관절 선택과 명령·재설정, 그리퍼 `o/c`의 실제
 - [x] 초기 목표 위치와 실제 초기 위치의 처리
 - [x] 팔과 그리퍼의 관절 상태를 `/joint_states`에 제공하는 방식
 
-현재 상태: SDF와 Xacro/URDF를 분리하고 `gz_ros2_control` 및 두 컨트롤러를 연결했다. 키보드의 팔 명령을 `/arm_position_controller/commands`로 전환했다. 초기 목표는 실제 시작 위치를 읽어 복사하지 않고 기존처럼 0 rad로 발행한다. 다음 작업은 4단계 통합 검증이며, 그리퍼 명령 전환은 별도 5단계다.
+현재 상태: SDF와 Xacro/URDF를 분리하고 `gz_ros2_control` 및 두 컨트롤러를 연결했다. 키보드의 팔 명령을 `/arm_position_controller/commands`로 전환했다. 초기 목표는 실제 시작 위치를 읽어 복사하지 않고 기존처럼 0 rad로 발행한다. 4단계 기술 검증을 마쳤으며, 그리퍼 명령 전환은 별도 5단계다.
