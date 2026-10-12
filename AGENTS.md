@@ -1,3 +1,7 @@
+# 사용자 공통 요청 사항
+* 문의 하는 작업에 대해서 코드 수정을 하지 말것.(ex) 이것은 왜이래?, 이코드는 무슨 의미야? ) 
+* 명시적인 구현, 코드수정 요청이 있을 경우만 코드를 수정할것.
+
 # Repository Guidelines
 
 ## Project Structure & Module Organization
