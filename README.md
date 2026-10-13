@@ -68,11 +68,11 @@ rm -rf build install log
     ros2 launch my_arm_with_ball_bringup simulation.launch.py
     ```
 
-The launch file starts Gazebo, RViz, the ROS-Gazebo bridge,
-robot_state_publisher, and the two ros2_control controller spawners. Gazebo
-loads the controller manager through the `gz_ros2_control` model plugin.
-RViz shows the robot model using `/robot_description` and `/joint_states`.
-Keyboard teleoperation is run separately. Use `rviz:=false` to omit RViz.
+The launch file starts Gazebo, MoveIt `move_group`, the ROS-Gazebo bridge,
+robot_state_publisher, the ros2_control controllers, and RViz with the
+MotionPlanning panel. Gazebo loads the controller manager through the
+`gz_ros2_control` model plugin. MoveIt is started after the arm and gripper
+controllers are active. Use `rviz:=false` to omit RViz.
 
 For a machine without a display, run `ros2 launch my_arm_with_ball_bringup
 simulation.launch.py headless:=true`. This also disables RViz by default.
@@ -82,8 +82,9 @@ so the SDF plugin can load its controller YAML through a relative path.
 ## MoveIt planning
 
 The `my_arm_with_ball_moveit_config` package provides a planning-only MoveIt
-setup for the UR5 and RG2. Build and source the workspace, then start the
-complete planning demo:
+demo for the UR5 and RG2. To plan and execute against the Gazebo simulation,
+use the integrated `simulation.launch.py` command above. The independent
+planning demo remains available without Gazebo:
 
 ```bash
 colcon build --packages-select my_arm_with_ball_moveit_config --symlink-install
@@ -134,10 +135,12 @@ ros2 run my_arm_with_ball_moveit_config validate_planning.py
 
 ## UR5 RG2 keyboard control
 
-The keyboard node sends the six UR5 target positions to the ros2_control arm
-controller. It waits up to 120 seconds for `arm_position_controller` to become
-active before sending its initial zero-position target. The `o/c` gripper
-commands still use the Gazebo bridge. In a second terminal, run:
+The keyboard node sends short `FollowJointTrajectory` action goals to
+`arm_trajectory_controller` and reads the latest `/joint_states` before
+calculating relative arm targets. It waits up to 120 seconds for the arm and
+gripper controllers, the trajectory action server, and a fresh joint state; it
+does not send a startup arm reset. The `o/c` gripper commands still use the
+`gripper_position_controller` topic. In a second interactive terminal, run:
 
 ```bash
 source /opt/ros/$ROS_DISTRO/setup.bash
@@ -155,17 +158,14 @@ then change its target position in 0.05 rad increments:
 | `d` | Increase the selected joint target by 0.05 rad |
 | `o` | Open the RG2 gripper |
 | `c` | Close the RG2 gripper |
-| `r` | Reset the selected joint to its initial target |
-| `x` | Reset all UR5 joints and the gripper |
+| `r` | Move the selected arm joint to 0 rad |
+| `x` | Move all UR5 joints to 0 rad; the gripper is unchanged |
 | `q` | Quit the keyboard node |
 
-The arm controller accepts six target positions in joint order
-`shoulder_pan_joint`, `shoulder_lift_joint`, `elbow_joint`, `wrist_1_joint`,
-`wrist_2_joint`, `wrist_3_joint`. To test the arm controller directly:
-
-```bash
-ros2 topic pub --once /arm_position_controller/commands std_msgs/msg/Float64MultiArray '{data: [0.1, 0.0, 0.0, 0.0, 0.0, 0.0]}'
-```
+During an arm trajectory, additional arm keys are ignored. The keyboard's
+direct action path does not invoke MoveIt's collision planning; use small
+motions around the clear starting pose when testing it. RViz/MoveIt plans are
+collision checked and use the same arm trajectory controller for execution.
 
 The `joint_state_broadcaster` publishes the measured arm and gripper state on
 `/joint_states`. Check the controller and state topics with:

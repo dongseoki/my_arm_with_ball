@@ -1,6 +1,6 @@
 # Gazebo 제어 기준 확인 절차
 
-이 문서는 Fixed Joint Waypoint 구현 전 0단계의 수동 검증 기록이다. 아래 키보드 실행 방법은 현재 launch 구성에 맞춘다. 과거 확인 결과는 당시의 관찰로 읽는다.
+이 문서는 Gazebo/MoveIt 단계 통합 이후의 수동 제어 재검증 절차다. 아래 키보드 실행 방법은 현재 launch 및 `arm_trajectory_controller` 구성에 맞춘다. 과거 확인 결과는 당시의 관찰로 읽는다.
 
 ## 1. 실행
 
@@ -23,7 +23,7 @@ ros2 launch my_arm_with_ball_bringup simulation.launch.py headless:=true rviz:=f
 | `d` | 선택한 관절을 `+0.05` rad 이동 |
 | `o` | RG2 그리퍼 열기 |
 | `c` | RG2 그리퍼 닫기 |
-| `x` | 팔과 그리퍼를 초기 목표값으로 재설정 |
+| `x` | 팔 6축을 0 rad로 재설정하고 그리퍼는 유지 |
 | `q` | 키보드 노드 종료 |
 
 ## 2. HOME 확인
@@ -78,7 +78,7 @@ o
 | 닫힘 | `0.0` |
 | 열림 | `1.18` |
 
-두 finger joint에는 같은 수치를 각각 발행한다.
+두 finger joint에는 같은 수치를 각각 발행한다. 팔의 `a/d` 이동은 내부 저장 목표가 아닌 최신 `/joint_states`에서 계산한 상대 이동이며, 실행 중 추가 팔 입력은 무시된다. 팔 명령은 `FollowJointTrajectory` action으로 실행되고 목표 도달값은 `/joint_states`에서 확인한다.
 
 ## 4. 관절 방향 확인
 

@@ -150,3 +150,40 @@
 - 별도 후속 단계에서 그리퍼를 MoveIt으로 구동할 경우, 그리퍼 trajectory/action 연결과 실패/상태 검증을 먼저 별도 검증한 다음 기존 접촉·부착 단계에 합류하는 순서를 검토한다.
 
 완료 시 실제 파일 변경, 사용한 실행 명령, 컨트롤러 및 action 이름, 각 테스트 결과, 기준값 조정 근거, 미해결 제한을 이 문서와 [`moveit_apply.md`](moveit_apply.md)에 기록한다.
+
+## 9. 구현 및 검증 결과 (2026-10-13)
+
+단계 3을 계획 범위에 따라 구현했다.
+
+### 변경 결과
+
+| 파일 | 실제 변경 요약 |
+|---|---|
+| `my_arm_with_ball_bringup/config/ros2_controllers.yaml` | 팔 `arm_position_controller`를 제거하고 팔 6축 `arm_trajectory_controller`를 추가했다. 두 finger joint의 기존 gripper position controller는 유지했다. |
+| `my_arm_with_ball_bringup/launch/simulation.launch.py` | 기존 Gazebo launch에 MoveIt MoveGroup과 MotionPlanning RViz 구성을 통합하고, controller spawner 성공 후 MoveIt을 시작하도록 순서를 구성했다. |
+| `my_arm_with_ball_bringup/package.xml` | trajectory controller와 통합 MoveIt launch 의존성을 추가했다. |
+| `my_arm_with_ball_moveit_config/config/moveit_controllers.yaml` | 팔 6관절을 `arm_trajectory_controller/follow_joint_trajectory`에 연결했다. |
+| `my_arm_with_ball_moveit_config/launch/move_group.launch.py` | trajectory controller config 및 `0.02 rad` 시작 허용 오차를 읽고, 기본 계획 전용 모드에서 ExecuteTrajectory capability를 비활성화한다. |
+| `my_arm_with_ball_moveit_config/package.xml` | Simple controller manager 실행 의존성을 선언했다. |
+| `my_arm_with_ball_application/scripts/keyboard_joint_teleop.py` | 키보드 팔 입력을 실제 상태 기반 FollowJointTrajectory goal로 전환하고 상태 허용 오차·timeout·취소·오류 로그를 구현했다. `o/c` 토픽은 유지하고 `x`는 팔만 초기화한다. |
+| `my_arm_with_ball_application/package.xml` | action, trajectory 및 joint state 메시지 직접 의존성을 선언했다. |
+| `my_arm_with_ball_application/test/test_keyboard_joint_teleop.py` | 현재 상태 기반 상대 명령, 한계/신선도 차단, 리셋, gripper 경로, action 결과 및 timeout 취소 단위 테스트를 추가했다. |
+| `README.md`, `docs/control_validation_checklist.md` | 통합 실행과 새 키보드 action 동작을 설명하도록 문서를 갱신했다. |
+| `plan/moveit_apply.md` | 단계 3 완료 및 검증 결과를 표시하고, 그리퍼 MoveIt 연결을 단계 3 후속 범위로 분리했다. |
+
+### 실행 검증
+
+- 전체 workspace `colcon build --symlink-install` 성공.
+- 전체 workspace `colcon test` 및 `colcon test-result --verbose` 성공: 3개 테스트, 오류 0, 실패 0.
+- 다음 headless 통합 launch에서 controller-manager, MoveIt, planning scene loader가 정상 기동했다: `ros2 launch my_arm_with_ball_bringup simulation.launch.py headless:=true rviz:=false`.
+- `joint_state_broadcaster`, `arm_trajectory_controller`, `gripper_position_controller`가 `active`였다. 팔 6개 position command interface는 arm trajectory controller가 점유했고 팔 position controller는 존재하지 않았다. `/joint_states` publisher는 하나였다.
+- 실제 키보드 노드 동작 경로를 ROS action client로 실행해 shoulder pan 목표 `+0.05 rad`를 보냈다. 측정 결과 약 `0.0450 rad`, 목표 오차 약 `0.0050 rad`로 `0.01 rad` 기준 안에 도달했다.
+- MoveIt `MoveGroup` action의 계획·실행 성공을 확인했다. trajectory execution manager 로그에서 `allowed_start_tolerance 0.02`와 `SUCCEEDED`를 확인했으며, 실제 action controller가 goal을 수락하고 목표에 도달했다.
+- 현재 상태와 `0.02 rad`보다 큰 시작 오차를 가진 ExecuteTrajectory 입력은 MoveIt에서 거부됐다(ABORTED, MoveIt error `-4`).
+- 독립 계획 데모에서 `allow_trajectory_execution=False`이고 `/execute_trajectory` action endpoint가 없음을 별도 프로세스로 확인했다.
+
+### 검증 한계
+
+- GUI가 없는 headless 실행이므로 RViz 화면 표시 및 Gazebo 시각적 로봇 자세를 직접 확인하지 않았다. 관절 action 결과, MoveIt 로그 및 `/joint_states`로 검증했다.
+- timeout 이후 실제 controller cancellation 동작은 ROS 단위 테스트에서 검증했으나, Gazebo 통합에서 인위적인 action stall을 만들어 확인하지는 않았다.
+- 키보드 action 경로는 MoveIt 경로 계획 및 충돌 검사를 우회한다. 실제 사용 시 작은 목표 이동과 관절 한계 이내 테스트만 수행하며, RViz MoveIt 실행은 별도로 collision checked trajectory를 사용한다.

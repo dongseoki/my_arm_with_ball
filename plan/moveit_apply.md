@@ -85,18 +85,29 @@ UR5 + RG2가 Gazebo Sim에서 월드에 고정 배치된 공을 집어 바구니
 
 ### 단계 3 — Gazebo ros2_control과 MoveIt 실행 인터페이스 연결
 
+상태: **완료 (2026-10-13).** 실제 구현 및 헤드리스 Gazebo 실행 결과는 [`m_3_plan.md`](m_3_plan.md)에 기록했다.
+
 **작업**
 
-- arm 컨트롤러를 MoveIt 실행과 호환되는 joint trajectory 액션 인터페이스로 전환하거나, MoveIt controller manager가 사용할 수 있는 호환 경로를 구성한다.
-- 팔 trajectory 컨트롤러를 MoveIt에 연결하고, 그리퍼는 기존 위치 명령 경로를 유지한다. 그리퍼의 MoveIt 실행 연결은 후속 3단계 보강 항목에서 별도로 수행한다.
-- MoveIt trajectory execution을 Gazebo에 전달해 저위험 단일 관절/짧은 경로부터 실행한다.
-- 기존 키보드 teleop과 새 컨트롤러 구성이 충돌하지 않도록 실행 설정과 컨트롤러 활성 순서를 정리한다.
+- [x] 팔 `ForwardCommandController`를 `joint_trajectory_controller`로 교체하고 `FollowJointTrajectory` 액션을 사용한다. 변환 어댑터 방식은 채택하지 않으며 기존 팔 위치 컨트롤러는 제거한다.
+- [x] 팔 trajectory 컨트롤러를 MoveIt에 연결하고, 그리퍼는 기존 위치 명령 경로를 유지한다. 그리퍼의 MoveIt 실행 연결은 후속 3단계 보강 항목에서 별도로 수행한다.
+- [x] MoveIt trajectory execution을 통합 Gazebo launch에서 허용하고, 계획 전용 MoveIt 데모는 실제 실행을 계속 비활성화한다.
+- [x] 기존 키보드 teleop을 실제 `/joint_states` 기반의 짧은 상대 궤적 액션으로 전환하고, 컨트롤러 활성 순서를 정리한다.
 
 **완료 조건**
 
-- RViz에서 계획한 팔 궤적을 Gazebo 로봇이 추종한다.
-- 실행 결과 관절 상태가 MoveIt 상태 모니터와 일치한다.
-- 컨트롤러 비활성, 액션 거부, 실행 timeout이 명확한 에러로 보고된다.
+- [x] MoveIt이 계획한 짧은 팔 궤적을 Gazebo 로봇이 추종한다. GUI/RViz 화면 검증은 헤드리스 실행에 포함하지 않았다.
+- [x] MoveIt 상태 모니터 및 `/joint_states`에서 실제 실행 결과를 확인했다.
+- [x] controller 비활성, 액션 거부, 실행 timeout 등 오류 유형을 구분해 한국어·영어 로그로 보고하고, 액션 실패 후 키보드 노드는 계속 실행하도록 구현했다.
+
+**검증 결과**
+
+- 전체 workspace `colcon build --symlink-install` 및 `colcon test`/`colcon test-result --verbose` 통과(3개 테스트, 실패 0).
+- `simulation.launch.py headless:=true rviz:=false` 실행에서 `joint_state_broadcaster`, `arm_trajectory_controller`, `gripper_position_controller`가 모두 `active`였다. 팔 6개 position 명령 인터페이스는 trajectory controller가 점유했고, 기존 `arm_position_controller`는 등록되지 않았다. `/joint_states` 발행자는 하나였다.
+- 키보드 동작 경로를 실제 action/controller/Gazebo에 연결해 `+0.05 rad` 목표를 수행했다. 측정 상태는 시작 약 `0.000 rad`에서 `0.0450 rad`로 변했고 목표 `0.050 rad`와 최대 `0.0050 rad` 차이로 허용 오차 `0.01 rad` 이내였다.
+- MoveIt `MoveGroup` action으로 충돌 없는 `shoulder_pan_joint` 소량 이동을 계획·실행했다. `MoveItErrorCodes.SUCCESS`와 action 성공을 확인했고 관절 상태가 목표 허용 오차 이내로 움직였다. 별도 실행 시험에서는 MoveIt `allowed_start_tolerance=0.02 rad` 초과의 시작 궤적을 거부했다.
+- 독립 `demo.launch.py use_rviz:=false`에서 `allow_trajectory_execution=False`이고 `/execute_trajectory` action이 제공되지 않아 계획 전용 경계를 유지함을 확인했다.
+- 키보드 조작의 충돌 검사는 MoveIt을 거치지 않는 직접 controller action이므로 소량의 안전한 관절 동작으로만 검증했다. RViz GUI 시각 검증 및 공 집기·그리퍼 MoveIt 연결은 이번 단계 범위가 아니다.
 
 ### 단계 3 후속 — MoveIt 그리퍼 실행 연결
 
