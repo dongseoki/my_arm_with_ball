@@ -88,7 +88,7 @@ UR5 + RG2가 Gazebo Sim에서 월드에 고정 배치된 공을 집어 바구니
 **작업**
 
 - arm 컨트롤러를 MoveIt 실행과 호환되는 joint trajectory 액션 인터페이스로 전환하거나, MoveIt controller manager가 사용할 수 있는 호환 경로를 구성한다.
-- 팔 trajectory 컨트롤러와 그리퍼 제어 경로를 각각 연결하고, joint state 및 시간 동기화를 확인한다.
+- 팔 trajectory 컨트롤러를 MoveIt에 연결하고, 그리퍼는 기존 위치 명령 경로를 유지한다. 그리퍼의 MoveIt 실행 연결은 후속 3단계 보강 항목에서 별도로 수행한다.
 - MoveIt trajectory execution을 Gazebo에 전달해 저위험 단일 관절/짧은 경로부터 실행한다.
 - 기존 키보드 teleop과 새 컨트롤러 구성이 충돌하지 않도록 실행 설정과 컨트롤러 활성 순서를 정리한다.
 
@@ -97,6 +97,29 @@ UR5 + RG2가 Gazebo Sim에서 월드에 고정 배치된 공을 집어 바구니
 - RViz에서 계획한 팔 궤적을 Gazebo 로봇이 추종한다.
 - 실행 결과 관절 상태가 MoveIt 상태 모니터와 일치한다.
 - 컨트롤러 비활성, 액션 거부, 실행 timeout이 명확한 에러로 보고된다.
+
+### 단계 3 후속 — MoveIt 그리퍼 실행 연결
+
+팔 궤적 실행을 검증한 뒤, 접촉 감지나 공 부착/분리 기능에 앞서 RG2 그리퍼 자체를 MoveIt에서 실행할 수 있도록 연결한다. 이 항목은 팔 중심 3단계와 기존 접촉·부착 4단계 사이의 별도 선행 작업이다. 기존 단계 번호는 유지한다.
+
+**작업**
+
+- 단계 2에서 만든 SRDF의 `gripper` 그룹과 두 finger joint 정의를 재사용하고, 실제 계획 모델에서 그룹 관절 이름·순서·한계를 다시 대조한다. 불필요한 새 그룹이나 joint mimic 관계를 추가하지 않는다.
+- Gazebo ros2_control의 `gripper_position_controller`를 두 finger joint용 `joint_trajectory_controller`로 전환해 `FollowJointTrajectory` 액션 서버를 제공한다. 두 finger joint의 현재 독립 position command/state 인터페이스를 사용한다.
+- MoveIt controller manager 설정에 gripper trajectory controller의 이름, action endpoint, `gripper` 그룹의 두 관절 매핑을 추가한다. 팔 및 그리퍼 컨트롤러가 각각 자기 관절만 점유하고 MoveIt이 두 컨트롤러를 올바른 그룹에 선택하는지 확인한다.
+- `simulation.launch.py`에서 joint state broadcaster 성공 후 팔 및 그리퍼 trajectory controller를 활성화하고 MoveIt 통합 실행을 유지한다. 같은 finger joint를 점유하는 기존 `gripper_position_controller`를 동시에 실행하지 않는다.
+- 키보드 `o/c` 조작을 기존 gripper position topic에서 gripper trajectory action으로 전환한다. 각 동작은 현재 finger joint 상태를 시작점으로 사용하고, 액션 결과와 `/joint_states`의 실제 목표 도달을 확인한다. 팔 키 동작과 기존 입력 중첩·실패 규칙을 일관되게 적용한다.
+- MoveIt의 `gripper` 그룹에서 열림/닫힘 joint 목표를 각각 계획·실행하고 Gazebo 상태와 비교한다. 목표 각도는 기존 `o=1.18 rad`, `c=0 rad` 동작을 기준으로 하며, 두 finger joint의 방향과 상태값을 실측 확인한다.
+- 액션 거부, timeout, 취소, 상태 미도달 시 원인이 명확히 보고되며, 공 집기 성공이나 물리적 파지 성능을 이 단계의 결과로 간주하지 않는다.
+
+**완료 조건**
+
+- MoveIt controller manager가 `gripper` 그룹을 gripper trajectory controller의 `FollowJointTrajectory` 액션에 연결하고, MoveIt에서 그리퍼 궤적을 Gazebo에 실행한다.
+- 두 finger joint가 지정된 열림/닫힘 목표로 이동하고, action result와 `/joint_states` 결과가 설정된 허용 오차 안에서 일치한다.
+- 팔과 그리퍼 trajectory controller가 동시에 활성화되어도 서로 다른 joint command interface만 점유한다. 기존 gripper position controller는 같은 finger joint의 제어 경로로 남아 있지 않는다.
+- 키보드 `o/c`가 기존 기능 의미를 보존하면서 action 경로로 동작하고, action 실패·timeout이 로그에서 구별된다.
+- Planning Scene에서 그리퍼 상태와 Gazebo `/joint_states`가 동기화되며, standalone 계획 전용 실행은 계속 실제 trajectory 실행을 비활성화한다.
+- 접촉 감지, 공 부착/분리, 파지 성공 판정은 아직 구현하지 않았고 다음 단계 범위로 명확히 남긴다.
 
 ### 단계 4 — 그리퍼 상태 및 Gazebo 접촉·부착 동작
 
