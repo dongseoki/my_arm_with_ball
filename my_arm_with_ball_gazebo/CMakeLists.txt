@@ -9,6 +9,10 @@ project(my_arm_with_ball_gazebo)
 # Such variables can be used lateron in the CMakeLists.txt file.
 find_package(ament_cmake REQUIRED)
 find_package(my_arm_with_ball_description REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 find_package(gz-cmake3 REQUIRED)
 find_package(gz-plugin2 REQUIRED COMPONENTS register)
@@ -73,8 +77,13 @@ target_link_libraries(FullSystem PRIVATE
 # Following 'install' directive ensures that the compiled libraries
 # of the 'BasicSystem' and 'FullSystem' targets will be copied
 # to the subfolder 'lib/my_arm_with_ball_gazebo' of the install directory.
+add_library(GraspSystem SHARED src/GraspSystem.cc)
+target_compile_features(GraspSystem PRIVATE cxx_std_17)
+target_link_libraries(GraspSystem gz-sim${GZ_SIM_VER}::gz-sim${GZ_SIM_VER})
+ament_target_dependencies(GraspSystem rclcpp std_msgs std_srvs geometry_msgs)
+
 install(
-  TARGETS BasicSystem FullSystem
+  TARGETS BasicSystem FullSystem GraspSystem
   DESTINATION lib/${PROJECT_NAME}
 )
 

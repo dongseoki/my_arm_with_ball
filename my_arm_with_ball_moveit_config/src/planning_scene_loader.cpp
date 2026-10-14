@@ -41,6 +41,23 @@ int main(int argc, char** argv)
         ball.primitive_poses.push_back(ball_pose);
         request->scene.world.collision_objects.push_back(ball);
 
+        // Gazebo has a ground plane. Exclude the fixed base footprint while
+        // protecting the reachable pick area from below-ground IK branches.
+        moveit_msgs::msg::CollisionObject floor;
+        floor.header.frame_id = "world";
+        floor.id = "pick_area_floor";
+        floor.operation = moveit_msgs::msg::CollisionObject::ADD;
+        shape_msgs::msg::SolidPrimitive slab;
+        slab.type = shape_msgs::msg::SolidPrimitive::BOX;
+        slab.dimensions = {1.25, 2.0, 0.05};
+        geometry_msgs::msg::Pose slab_pose;
+        slab_pose.position.x = 0.875;
+        slab_pose.position.z = -0.025;
+        slab_pose.orientation.w = 1.0;
+        floor.primitives.push_back(slab);
+        floor.primitive_poses.push_back(slab_pose);
+        request->scene.world.collision_objects.push_back(floor);
+
         moveit_msgs::msg::CollisionObject basket;
         basket.header.frame_id = "world";
         basket.id = "basket";
@@ -75,7 +92,7 @@ int main(int argc, char** argv)
             rclcpp::FutureReturnCode::SUCCESS || !future.get()->success) {
             throw std::runtime_error("move_group did not acknowledge initial planning scene");
         }
-        RCLCPP_INFO(node->get_logger(), "Applied apple and basket in world frame");
+        RCLCPP_INFO(node->get_logger(), "Applied apple, pick-area floor, and basket in world frame");
     } catch (const std::exception& error) {
         RCLCPP_ERROR(node->get_logger(), "%s", error.what());
         rclcpp::shutdown();

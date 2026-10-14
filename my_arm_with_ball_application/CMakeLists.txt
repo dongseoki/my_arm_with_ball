@@ -12,6 +12,16 @@ if(BUILD_TESTING)
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/test/test_keyboard_joint_teleop.py"
   )
+  add_test(
+    NAME grasp_scene
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/test/test_grasp_scene.py"
+  )
+  add_test(
+    NAME grasp_logic
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/test/test_grasp_logic.py"
+  )
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()
@@ -22,5 +32,9 @@ install(
   DESTINATION lib/${PROJECT_NAME}
   RENAME keyboard_joint_teleop
 )
+
+install(PROGRAMS scripts/grasp_test.py DESTINATION lib/${PROJECT_NAME} RENAME grasp_test)
+install(FILES scripts/grasp_scene.py DESTINATION lib/${PROJECT_NAME})
+install(FILES scripts/grasp_logic.py DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

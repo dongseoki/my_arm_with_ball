@@ -16,6 +16,20 @@ ros2 launch my_arm_with_ball_bringup simulation.launch.py headless:=true rviz:=f
 
 별도 인터랙티브 터미널에서 같은 ROS 및 워크스페이스 환경을 적용한 뒤 `ros2 run my_arm_with_ball_application keyboard_joint_teleop`을 실행한다. 그 터미널에서 아래 키를 입력한다. 화면에서 움직임을 확인하려면 launch의 `headless:=false`를 사용한다.
 
+### 4단계 공 집기 자동 시험
+
+일반 시뮬레이션 대신 아래 별도 launch를 실행하면 Gazebo·MoveIt 준비 후 빈손 부착 거부 → 공 접촉·부착 → 짧은 상승 → 분리·낙하를 자동 검사한다. `STAGE4 GRASP TEST PASSED`와 launch 종료 코드 0이 성공 기준이며, 실패하면 비영(非零) 종료 코드와 실패 단계가 출력된다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+export GZ_VERSION=harmonic
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch my_arm_with_ball_bringup pick_grasp_test.launch.py headless:=true rviz:=false
+```
+
+화면 확인은 `headless:=false rviz:=true`로 선택할 수 있다. 자동 시험은 바구니 운반을 하지 않으며, 실제 화면에서의 RViz 전환 확인은 별도로 수행해야 한다.
+
 | 키 | 동작 |
 |---|---|
 | `1`~`6` | 조정할 팔 관절 선택 |
