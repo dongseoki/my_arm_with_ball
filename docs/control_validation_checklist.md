@@ -1,6 +1,6 @@
 # Gazebo 제어 기준 확인 절차
 
-이 문서는 Gazebo/MoveIt 단계 통합 이후의 수동 제어 재검증 절차다. 아래 키보드 실행 방법은 현재 launch 및 `arm_trajectory_controller` 구성에 맞춘다. 과거 확인 결과는 당시의 관찰로 읽는다.
+이 문서는 Gazebo/MoveIt 단계 통합 이후의 수동 제어 재검증 절차다. 아래 키보드 실행 방법은 현재 launch 및 팔·그리퍼 trajectory controller 구성에 맞춘다. 과거 확인 결과는 당시의 관찰로 읽는다.
 
 ## 1. 실행
 
@@ -78,7 +78,9 @@ o
 | 닫힘 | `0.0` |
 | 열림 | `1.18` |
 
-두 finger joint에는 같은 수치를 각각 발행한다. 팔의 `a/d` 이동은 내부 저장 목표가 아닌 최신 `/joint_states`에서 계산한 상대 이동이며, 실행 중 추가 팔 입력은 무시된다. 팔 명령은 `FollowJointTrajectory` action으로 실행되고 목표 도달값은 `/joint_states`에서 확인한다.
+두 finger joint에는 같은 목표값을 각각 보낸다. 팔의 `a/d` 이동은 내부 저장 목표가 아닌 최신 `/joint_states`에서 계산한 상대 이동이다. 팔과 그리퍼 명령은 각각의 `FollowJointTrajectory` action으로 실행되고, 목표 도달값은 `/joint_states`에서 확인한다. 팔 또는 그리퍼 action 실행 중에는 양쪽 조작 입력을 모두 무시한다.
+
+후속 단계 검증 시 `ros2 control list_controllers`에서 `arm_trajectory_controller`, `gripper_trajectory_controller`, `joint_state_broadcaster`가 `active`이고, 이전 `gripper_position_controller`가 활성 제어 경로에 없는지 확인한다. MoveIt의 `gripper` 그룹으로 열기·닫기 계획을 각각 실행해 action 결과와 두 finger joint의 `/joint_states`를 비교한다. 독립 `demo.launch.py`는 계획 전용이므로 실행 action이 비활성인지 확인한다.
 
 ## 4. 관절 방향 확인
 

@@ -143,11 +143,11 @@ def generate_launch_description():
         output="screen",
     )
 
-    gripper_position_controller = Node(
+    gripper_trajectory_controller = Node(
         package="controller_manager",
         executable="spawner",
         arguments=[
-            "gripper_position_controller",
+            "gripper_trajectory_controller",
             "--controller-manager",
             "/controller_manager",
             "--controller-manager-timeout",
@@ -170,7 +170,7 @@ def generate_launch_description():
 
     def start_gripper_after_arm(event, _context):
         if event.returncode == 0:
-            return [gripper_position_controller]
+            return [gripper_trajectory_controller]
         return [
             LogInfo(
                 msg=(
@@ -186,8 +186,8 @@ def generate_launch_description():
         return [
             LogInfo(
                 msg=(
-                    "오류: gripper_position_controller 시작 실패; MoveIt 실행 기능을 시작하지 않습니다. / "
-                    "Error: gripper position controller failed; MoveIt execution will not start."
+                    "오류: gripper_trajectory_controller 시작 실패; MoveIt 실행 기능을 시작하지 않습니다. / "
+                    "Error: gripper trajectory controller failed; MoveIt execution will not start."
                 )
             )
         ]
@@ -219,7 +219,7 @@ def generate_launch_description():
             ),
             RegisterEventHandler(
                 OnProcessExit(
-                    target_action=gripper_position_controller,
+                    target_action=gripper_trajectory_controller,
                     on_exit=start_moveit_after_gripper,
                 )
             ),

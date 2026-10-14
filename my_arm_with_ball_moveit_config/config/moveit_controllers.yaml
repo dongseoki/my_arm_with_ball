@@ -1,10 +1,11 @@
-# MoveIt execution uses the arm's ros2_control FollowJointTrajectory action.
+# MoveIt execution uses the arm and gripper ros2_control FollowJointTrajectory actions.
 moveit_manage_controllers: false
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 
 moveit_simple_controller_manager:
   controller_names:
     - arm_trajectory_controller
+    - gripper_trajectory_controller
 
   arm_trajectory_controller:
     type: FollowJointTrajectory
@@ -17,3 +18,10 @@ moveit_simple_controller_manager:
       - wrist_1_joint
       - wrist_2_joint
       - wrist_3_joint
+
+  gripper_trajectory_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    joints:
+      - rg2_finger_joint1
+      - rg2_finger_joint2

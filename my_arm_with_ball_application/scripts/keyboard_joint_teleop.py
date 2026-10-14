@@ -3,6 +3,7 @@
 import math
 import os
 import select
+import signal
 import sys
 import termios
 import time
@@ -16,8 +17,8 @@ from control_msgs.msg import JointTolerance
 from controller_manager_msgs.srv import ListControllers
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 
@@ -35,7 +36,7 @@ GRIPPER_JOINT_NAMES = ("rg2_finger_joint1", "rg2_finger_joint2")
 GRIPPER_LIMITS = (0.0, 1.18)
 ANGLE_STEP = 0.05
 ARM_CONTROLLER_NAME = "arm_trajectory_controller"
-GRIPPER_CONTROLLER_NAME = "gripper_position_controller"
+GRIPPER_CONTROLLER_NAME = "gripper_trajectory_controller"
 CONTROLLER_NAMES = (ARM_CONTROLLER_NAME, GRIPPER_CONTROLLER_NAME)
 CONTROLLER_WAIT_TIMEOUT = 120.0
 STATE_MAX_AGE = 0.5
@@ -47,7 +48,7 @@ CONSERVATIVE_JOINT_SPEED = 0.2
 
 
 class KeyboardJointTeleop(Node):
-    """Read keyboard input and execute guarded arm trajectories."""
+    """Read keyboard input and execute guarded arm and gripper trajectories."""
 
     def __init__(self) -> None:
         super().__init__("keyboard_joint_teleop")
@@ -56,18 +57,21 @@ class KeyboardJointTeleop(Node):
             FollowJointTrajectory,
             f"/{ARM_CONTROLLER_NAME}/follow_joint_trajectory",
         )
-        self.gripper_publisher = self.create_publisher(
-            Float64MultiArray, f"/{GRIPPER_CONTROLLER_NAME}/commands", 10
+        self.gripper_action_client = ActionClient(
+            self, FollowJointTrajectory,
+            f"/{GRIPPER_CONTROLLER_NAME}/follow_joint_trajectory",
         )
         self.joint_state_subscription = self.create_subscription(
             JointState, "/joint_states", self._joint_state_callback, 10
         )
         self.joint_positions: dict[str, float] = {}
         self.joint_state_received_at: float | None = None
+        self.gripper_state_received_at: float | None = None
+        self.goal_joint_names = JOINT_NAMES
         self.selected_joint = 0
-        self.gripper_position = GRIPPER_LIMITS[0]
         self.action_in_progress = False
         self.goal_timed_out = False
+        self.shutdown_cancel_requested = False
         self.goal_deadline: float | None = None
         self.goal_target: tuple[float, ...] | None = None
         self.awaiting_state_deadline: float | None = None
@@ -77,22 +81,32 @@ class KeyboardJointTeleop(Node):
         if len(message.name) != len(message.position):
             return
         state = dict(zip(message.name, message.position))
-        if not all(name in state and math.isfinite(state[name]) for name in JOINT_NAMES):
-            return
-        self.joint_positions = {name: float(state[name]) for name in JOINT_NAMES}
-        self.joint_state_received_at = time.monotonic()
+        for names, timestamp_attribute in (
+            (JOINT_NAMES, "joint_state_received_at"),
+            (GRIPPER_JOINT_NAMES, "gripper_state_received_at"),
+        ):
+            if all(name in state and math.isfinite(state[name]) for name in names):
+                self.joint_positions.update({name: float(state[name]) for name in names})
+                setattr(self, timestamp_attribute, time.monotonic())
 
-    def _state_is_fresh(self) -> bool:
+    def _state_is_fresh(self, names=JOINT_NAMES) -> bool:
+        received_at = (
+            self.joint_state_received_at if names == JOINT_NAMES
+            else self.gripper_state_received_at
+        )
         return (
-            self.joint_state_received_at is not None
-            and time.monotonic() - self.joint_state_received_at <= STATE_MAX_AGE
-            and all(name in self.joint_positions for name in JOINT_NAMES)
+            received_at is not None
+            and time.monotonic() - received_at <= STATE_MAX_AGE
+            and all(name in self.joint_positions for name in names)
         )
 
-    def _current_arm_positions(self) -> tuple[float, ...] | None:
-        if not self._state_is_fresh():
+    def _current_positions(self, names) -> tuple[float, ...] | None:
+        if not self._state_is_fresh(names):
             return None
-        return tuple(self.joint_positions[name] for name in JOINT_NAMES)
+        return tuple(self.joint_positions[name] for name in names)
+
+    def _current_arm_positions(self) -> tuple[float, ...] | None:
+        return self._current_positions(JOINT_NAMES)
 
     def _log_error(self, korean: str, english: str) -> None:
         self.get_logger().error(f"오류: {korean} / Error: {english}")
@@ -136,25 +150,33 @@ class KeyboardJointTeleop(Node):
 
     def wait_for_action_server(self, timeout_sec: float = CONTROLLER_WAIT_TIMEOUT) -> bool:
         deadline = time.monotonic() + timeout_sec
-        while rclpy.ok() and time.monotonic() < deadline:
-            if self.action_client.wait_for_server(timeout_sec=0.2):
-                return True
-            rclpy.spin_once(self, timeout_sec=0.0)
-        self._log_error(
-            "팔 trajectory 액션 서버를 찾을 수 없습니다",
-            "arm trajectory action server was not available before timeout",
-        )
-        return False
+        for name, client in (
+            (ARM_CONTROLLER_NAME, self.action_client),
+            (GRIPPER_CONTROLLER_NAME, self.gripper_action_client),
+        ):
+            while rclpy.ok() and time.monotonic() < deadline:
+                remaining = max(0.0, deadline - time.monotonic())
+                if client.wait_for_server(timeout_sec=min(0.2, remaining)):
+                    break
+                rclpy.spin_once(self, timeout_sec=0.0)
+            else:
+                self._log_error(
+                    f"trajectory 액션 서버를 찾을 수 없습니다: {name}",
+                    f"trajectory action server was not available before timeout: {name}",
+                )
+                return False
+        return True
 
     def wait_for_fresh_joint_state(self, timeout_sec: float = 5.0) -> bool:
         deadline = time.monotonic() + timeout_sec
         while rclpy.ok() and time.monotonic() < deadline:
-            if self._current_arm_positions() is not None:
+            if (self._current_arm_positions() is not None
+                    and self._current_positions(GRIPPER_JOINT_NAMES) is not None):
                 return True
             rclpy.spin_once(self, timeout_sec=0.05)
         self._log_error(
-            "신선한 6축 /joint_states를 받지 못했습니다",
-            "did not receive a fresh six-joint /joint_states message",
+            "신선한 팔·그리퍼 /joint_states를 받지 못했습니다",
+            "did not receive a fresh arm and gripper /joint_states message",
         )
         return False
 
@@ -163,10 +185,11 @@ class KeyboardJointTeleop(Node):
         return max(MIN_TRAJECTORY_DURATION, max_delta / CONSERVATIVE_JOINT_SPEED)
 
     def _make_goal(
-        self, start: tuple[float, ...], target: tuple[float, ...], duration_sec: float
+        self, start: tuple[float, ...], target: tuple[float, ...], duration_sec: float,
+        names=JOINT_NAMES,
     ) -> FollowJointTrajectory.Goal:
         goal = FollowJointTrajectory.Goal()
-        goal.trajectory.joint_names = list(JOINT_NAMES)
+        goal.trajectory.joint_names = list(names)
         start_point = JointTrajectoryPoint()
         start_point.positions = list(start)
         target_point = JointTrajectoryPoint()
@@ -178,28 +201,36 @@ class KeyboardJointTeleop(Node):
         goal.goal_time_tolerance = Duration(sec=int(GOAL_TIME_TOLERANCE))
         goal.goal_tolerance = [
             JointTolerance(name=name, position=GOAL_POSITION_TOLERANCE)
-            for name in JOINT_NAMES
+            for name in names
         ]
         return goal
 
     def send_arm_goal(self, target: tuple[float, ...]) -> bool:
+        return self._send_goal(target, JOINT_NAMES, JOINT_LIMITS, self.action_client)
+
+    def _input_is_blocked(self) -> bool:
         if self.action_in_progress:
             self.get_logger().warning(
-                "팔 동작 중 입력을 무시했습니다 / Ignoring arm input while trajectory is active"
+                "동작 중 입력을 무시했습니다 / Ignoring input while trajectory is active"
             )
+            return True
+        return False
+
+    def _send_goal(self, target, names, limits, client) -> bool:
+        if self._input_is_blocked():
             return False
 
-        start = self._current_arm_positions()
+        start = self._current_positions(names)
         if start is None:
             self._log_error(
                 "관절 상태가 없거나 0.5초보다 오래되어 명령하지 않습니다",
                 "joint state is missing or older than 0.5 seconds; command was not sent",
             )
             return False
-        if len(target) != len(JOINT_NAMES):
-            self._log_error("목표 관절 수가 6개가 아닙니다", "target must contain all six arm joints")
+        if len(target) != len(names):
+            self._log_error("목표 관절 수가 올바르지 않습니다", "target joint count is incorrect")
             return False
-        for name, position, limits in zip(JOINT_NAMES, target, JOINT_LIMITS):
+        for name, position, limits in zip(names, target, limits):
             if not math.isfinite(position) or not limits[0] <= position <= limits[1]:
                 self._log_error(
                     f"{name} 목표가 유효 범위를 벗어났습니다: {position:.4f} rad",
@@ -208,14 +239,23 @@ class KeyboardJointTeleop(Node):
                 return False
 
         duration = self._trajectory_duration(start, target)
-        goal = self._make_goal(start, target, duration)
+        goal = self._make_goal(start, target, duration, names)
         self.action_in_progress = True
         self.goal_timed_out = False
+        self.shutdown_cancel_requested = False
+        self.goal_joint_names = names
         self.goal_target = target
-        self.goal_deadline = time.monotonic() + duration + TRAJECTORY_TIMEOUT_MARGIN
+        self.goal_deadline = (
+            time.monotonic() + duration + GOAL_TIME_TOLERANCE + TRAJECTORY_TIMEOUT_MARGIN
+        )
         self.awaiting_state_deadline = None
-        future = self.action_client.send_goal_async(goal)
-        future.add_done_callback(self._goal_response_callback)
+        try:
+            future = client.send_goal_async(goal)
+            future.add_done_callback(self._goal_response_callback)
+        except Exception as error:
+            self._log_error(str(error), f"trajectory action request failed: {error}")
+            self._clear_action()
+            return False
         return True
 
     def _goal_response_callback(self, future) -> None:
@@ -233,9 +273,16 @@ class KeyboardJointTeleop(Node):
             self._clear_action()
             return
         self.goal_handle = handle
-        handle.get_result_async().add_done_callback(self._result_callback)
-        if self.goal_timed_out:
-            self.goal_handle.cancel_goal_async().add_done_callback(self._cancel_callback)
+        try:
+            handle.get_result_async().add_done_callback(self._result_callback)
+        except Exception as error:
+            self._log_error(
+                f"trajectory 결과 요청 실패: {error}; 입력을 차단합니다",
+                f"trajectory result request failed: {error}; input remains blocked",
+            )
+            self.shutdown_cancel_requested = True
+        if self.goal_timed_out or self.shutdown_cancel_requested:
+            self._request_cancellation()
 
     def _result_callback(self, future) -> None:
         try:
@@ -246,14 +293,27 @@ class KeyboardJointTeleop(Node):
                 f"trajectory 결과 수신 실패: {error}",
                 f"failed to receive trajectory result: {error}",
             )
-            self._clear_action()
+            # A failed result request does not prove the controller has stopped.
+            self.shutdown_cancel_requested = True
+            self._request_cancellation()
             return
 
+        if self.shutdown_cancel_requested:
+            self._log_error(
+                "취소 요청 후 액션 종료를 확인했습니다",
+                "terminal action result received after cancellation request",
+            )
+            self._clear_action()
+            return
         if self.goal_timed_out:
             self._log_error(
                 "trajectory 제한 시간이 초과되었습니다; 액션 종료를 확인했습니다",
                 "trajectory timed out; terminal action result was received",
             )
+            self._clear_action()
+            return
+        if wrapped_result.status == GoalStatus.STATUS_CANCELED:
+            self._log_error("trajectory가 취소되었습니다", "trajectory was canceled")
             self._clear_action()
             return
         if (
@@ -274,6 +334,7 @@ class KeyboardJointTeleop(Node):
     def _clear_action(self) -> None:
         self.action_in_progress = False
         self.goal_timed_out = False
+        self.shutdown_cancel_requested = False
         self.goal_deadline = None
         self.goal_target = None
         self.awaiting_state_deadline = None
@@ -284,7 +345,7 @@ class KeyboardJointTeleop(Node):
             return
         now = time.monotonic()
         if self.awaiting_state_deadline is not None:
-            current = self._current_arm_positions()
+            current = self._current_positions(self.goal_joint_names)
             if current is not None and self.goal_target is not None:
                 max_error = max(
                     abs(actual - target) for actual, target in zip(current, self.goal_target)
@@ -314,7 +375,18 @@ class KeyboardJointTeleop(Node):
             if self.goal_handle is None:
                 # Wait for the accepted goal handle before attempting cancellation.
                 return
+            self._request_cancellation()
+
+    def _request_cancellation(self) -> None:
+        if self.goal_handle is None:
+            return
+        try:
             self.goal_handle.cancel_goal_async().add_done_callback(self._cancel_callback)
+        except Exception as error:
+            self._log_error(
+                f"액션 취소 요청 실패: {error}; 입력을 차단합니다",
+                f"action cancellation request failed: {error}; input remains blocked",
+            )
 
     def _cancel_callback(self, future) -> None:
         try:
@@ -327,11 +399,14 @@ class KeyboardJointTeleop(Node):
             return
         if not response.goals_canceling:
             self.get_logger().error(
-                "오류: 액션 취소가 확인되지 않았습니다; 팔 입력을 차단합니다 / "
-                "Error: action cancellation was not confirmed; arm input remains blocked"
+                "오류: 액션 취소가 확인되지 않았습니다; 팔·그리퍼 입력을 차단합니다 / "
+                "Error: action cancellation was not confirmed; "
+                "arm and gripper input remain blocked"
             )
 
     def change_selected_joint(self, delta: float) -> bool:
+        if self._input_is_blocked():
+            return False
         current = self._current_arm_positions()
         if current is None:
             self._log_error(
@@ -344,6 +419,8 @@ class KeyboardJointTeleop(Node):
         return self.send_arm_goal(tuple(target))
 
     def reset_joint(self, joint_index: int) -> bool:
+        if self._input_is_blocked():
+            return False
         current = self._current_arm_positions()
         if current is None:
             self._log_error(
@@ -358,12 +435,31 @@ class KeyboardJointTeleop(Node):
     def reset_arm(self) -> bool:
         return self.send_arm_goal(INITIAL_POSITIONS)
 
-    def set_gripper(self, position: float) -> None:
-        lower_limit, upper_limit = GRIPPER_LIMITS
-        self.gripper_position = max(lower_limit, min(upper_limit, position))
-        message = Float64MultiArray()
-        message.data = [self.gripper_position] * len(GRIPPER_JOINT_NAMES)
-        self.gripper_publisher.publish(message)
+    def set_gripper(self, position: float) -> bool:
+        return self._send_goal(
+            (position,) * len(GRIPPER_JOINT_NAMES), GRIPPER_JOINT_NAMES,
+            (GRIPPER_LIMITS,) * len(GRIPPER_JOINT_NAMES), self.gripper_action_client,
+        )
+
+    def cancel_active_goal(self, timeout_sec: float = 2.0) -> bool:
+        """Request cancellation on exit and wait boundedly for a terminal result."""
+        if not self.action_in_progress:
+            return True
+        if self.awaiting_state_deadline is not None:
+            self._clear_action()
+            return True
+        if not self.goal_timed_out and not self.shutdown_cancel_requested:
+            self.shutdown_cancel_requested = True
+            self._request_cancellation()
+        deadline = time.monotonic() + timeout_sec
+        while rclpy.ok() and self.action_in_progress and time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.05)
+        if self.action_in_progress:
+            self._log_error(
+                "종료 전 액션 취소를 확인하지 못했습니다",
+                "action termination could not be confirmed before shutdown",
+            )
+        return not self.action_in_progress
 
     def print_help(self) -> None:
         self.get_logger().info(
@@ -380,12 +476,22 @@ def run() -> int:
         )
         return 1
 
-    rclpy.init()
-    node = KeyboardJointTeleop()
     original_terminal_settings = termios.tcgetattr(sys.stdin)
+    original_signal_handlers = {
+        signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)
+    }
+    node = None
     exit_code = 0
 
+    def interrupt(signum, frame):
+        # Keep the ROS context alive until the active action has been canceled.
+        raise KeyboardInterrupt
+
     try:
+        rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
+        for signum in original_signal_handlers:
+            signal.signal(signum, interrupt)
+        node = KeyboardJointTeleop()
         if not node.wait_for_controllers() or not node.wait_for_action_server():
             exit_code = 1
             return exit_code
@@ -411,11 +517,7 @@ def run() -> int:
             if key == "q":
                 break
             if key in "123456":
-                if node.action_in_progress:
-                    node.get_logger().warning(
-                        "팔 동작 중 입력을 무시했습니다 / Ignoring arm input while trajectory is active"
-                    )
-                else:
+                if not node._input_is_blocked():
                     node.selected_joint = int(key) - 1
                     node.get_logger().info(
                         f"선택 관절: {JOINT_NAMES[node.selected_joint]} / "
@@ -436,9 +538,22 @@ def run() -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, original_terminal_settings)
-        node.destroy_node()
-        rclpy.shutdown()
+        # A second interrupt must not abort bounded cancellation and cleanup.
+        for signum in original_signal_handlers:
+            signal.signal(signum, signal.SIG_IGN)
+        try:
+            if node is not None:
+                try:
+                    node.cancel_active_goal()
+                finally:
+                    node.destroy_node()
+        finally:
+            try:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, original_terminal_settings)
+            finally:
+                rclpy.try_shutdown()
+                for signum, handler in original_signal_handlers.items():
+                    signal.signal(signum, handler)
 
     return exit_code
 

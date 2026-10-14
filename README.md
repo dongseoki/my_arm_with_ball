@@ -135,12 +135,11 @@ ros2 run my_arm_with_ball_moveit_config validate_planning.py
 
 ## UR5 RG2 keyboard control
 
-The keyboard node sends short `FollowJointTrajectory` action goals to
-`arm_trajectory_controller` and reads the latest `/joint_states` before
-calculating relative arm targets. It waits up to 120 seconds for the arm and
-gripper controllers, the trajectory action server, and a fresh joint state; it
-does not send a startup arm reset. The `o/c` gripper commands still use the
-`gripper_position_controller` topic. In a second interactive terminal, run:
+The keyboard node sends `FollowJointTrajectory` action goals directly to
+`arm_trajectory_controller` and `gripper_trajectory_controller`. It reads the
+latest `/joint_states` before each target, waits up to 120 seconds for both
+controllers and action servers, and does not send a startup reset. `o/c` send
+both finger joints to 1.18/0 rad respectively. In a second interactive terminal, run:
 
 ```bash
 source /opt/ros/$ROS_DISTRO/setup.bash
@@ -162,10 +161,11 @@ then change its target position in 0.05 rad increments:
 | `x` | Move all UR5 joints to 0 rad; the gripper is unchanged |
 | `q` | Quit the keyboard node |
 
-During an arm trajectory, additional arm keys are ignored. The keyboard's
+During either trajectory, additional arm and gripper keys are ignored. The keyboard's
 direct action path does not invoke MoveIt's collision planning; use small
 motions around the clear starting pose when testing it. RViz/MoveIt plans are
-collision checked and use the same arm trajectory controller for execution.
+collision checked and use the corresponding arm or gripper trajectory controller
+for execution. Action success is checked against the measured `/joint_states`.
 
 The `joint_state_broadcaster` publishes the measured arm and gripper state on
 `/joint_states`. Check the controller and state topics with:
