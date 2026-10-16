@@ -98,6 +98,7 @@ def generate_launch_description():
         executable="move_group",
         output="screen",
         parameters=[moveit_config.to_dict(), {
+            "capabilities": LaunchConfiguration("move_group_capabilities"),
             "allow_trajectory_execution": True,
             "trajectory_execution.allowed_start_tolerance": 0.02,
             "use_sim_time": True,
@@ -195,6 +196,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("headless", default_value="false"),
+            DeclareLaunchArgument("move_group_capabilities", default_value=""),
             DeclareLaunchArgument(
                 "rviz",
                 default_value=IfElseSubstitution(LaunchConfiguration("headless"), "false", "true"),

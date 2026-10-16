@@ -157,21 +157,34 @@ UR5 + RG2가 Gazebo Sim에서 월드에 고정 배치된 공을 집어 바구니
 
 ### 단계 5 — 전체 Pick-and-Place 작업 노드
 
+상태: **완료 (2026-10-16).** 구현 파일은 [`5단계설계.md`](../docs/5단계설계.md)의 실제 변경 목록을 참조한다. 단계별 MTC 실행과 Gazebo 물리 상태 확인을 한 번의 통합 실행에서 검증했다.
+
 **작업**
 
-- 하나의 작업 노드가 `접근 → 닫기/검증 → 부착 → 들어올리기 → 바구니 위 이동 → 분리 → 놓기 검증 → 시작 자세 복귀` 상태 흐름을 실행한다.
-- 각 구간은 MoveIt 계획/실행 결과를 확인한 뒤 다음 상태로 넘어간다.
-- 시작 자세, 공 접근 자세, 안전한 lift 높이, 바구니 중심 위 놓기 자세는 기존 모델/월드 좌표와 RViz 계획 검증을 바탕으로 설정값으로 관리한다.
-- 작업 중단 시 현재 상태와 실패 원인을 기록하고, 성공으로 오인하지 않도록 한다. 합의대로 자동 재시도는 수행하지 않는다.
-- 동시 실행 요청, 중복 작업 시작, 취소/종료 시 동작을 명시해 작업 상태가 꼬이지 않도록 한다.
+- [x] 하나의 작업 노드가 `접근 → 닫기/검증 → 부착 → 들어올리기 → 바구니 위 이동 → 분리 → 놓기 검증 → 시작 자세 복귀` 상태 흐름을 실행한다.
+- [x] 각 구간은 MoveIt 계획/실행 결과를 확인한 뒤 다음 상태로 넘어간다. Pose 목표는 MTC `GeneratePose`/`ComputeIK`/`Connect`를 사용하고, lift는 충돌 검사 Cartesian path로 수행한다.
+- [x] 시작 자세, 공 접근 자세, lift 높이, 바구니 위 놓기 자세와 시간·안정 기준을 설정 YAML에 둔다.
+- [x] 실패 단계와 이유를 `ERROR`로 남기며 재시도·launch shutdown 없이 `FAILED_WAITING`에 머문다.
+- [x] 성공 후 `SUCCEEDED_WAITING`에 머물고 노드·시뮬레이션을 유지한다.
 
 **완료 조건**
 
-- 단일 실행 요청으로 전체 작업이 끝나고 시작 관절 자세로 복귀한다.
-- 각 상태 진입/완료 및 실패 단계가 로그에서 추적된다.
-- 계획 실패, controller 실행 실패, 집기 실패, 놓기 실패가 각각 구분되어 중단된다.
+- [x] 단일 launch 실행으로 전체 작업이 끝나고 시작 관절 자세로 복귀한다.
+- [x] 각 상태 진입/완료 및 실패 단계가 로그에서 추적된다.
+- [x] 계획/실행/집기/놓기 실패는 상태별 오류로 중단하고 시뮬레이션을 유지한다. 계획 실패 및 준비 시간 초과 대기 동작을 확인했다.
+
+**검증 결과 (2026-10-16)**
+
+- `colcon build --packages-select my_arm_with_ball_application my_arm_with_ball_bringup --symlink-install` 통과. 테스트는 `colcon test --packages-select my_arm_with_ball_application my_arm_with_ball_bringup` 및 `colcon test-result --verbose`: 6개, 오류 0, 실패 0, skip 0.
+- launch Python 문법, 설정 YAML 구문, `git diff --check` 통과.
+- 격리한 `ROS_DOMAIN_ID=209`, `GZ_PARTITION=stage5_debug_209`에서 `pick_and_place_test.launch.py headless:=true rviz:=false`를 실행해 `APPROACH → CLOSE_CONTACT → ATTACH_SCENE → TRANSPORT → RELEASE → VERIFY_PLACE → REFRESH_SCENE → RETURN → SUCCEEDED_WAITING`을 확인했다.
+- 최종 반복의 Gazebo 공 pose 안정 판정: `(0.73031, 0.24446, 0.04631) m`, 추정 속도 `0.00259 m/s`; 성공 로그 뒤 작업 프로세스가 계속 살아 대기함을 확인했다.
+- action 승인 응답 지연 시 뒤늦게 승인된 goal만 취소하고, 취소 응답과 terminal result를 기록하도록 했다. 정상 실행은 확인했으나 의도적인 지연 승인 race 시험은 미수행이다.
+- 별도 계획 실패 및 준비 시간 초과 시나리오에서 ERROR 기록 후 자동 종료/재시도 없이 대기하는 동작을 확인했다. RViz GUI의 수동 시각 검토 및 실패 유형별 개별 통합 시험은 미수행이다.
 
 ### 단계 6 — 놓기 판정, 통합 검증 및 실행 절차
+
+상태: **부분 검증됨.** 정상 놓기 안정 판정은 단계 5 통합 실행에서 검증했다. 경계값·바구니 밖·불안정·관측 단절 등 놓기 실패 시나리오를 단계 6에서 별도 통합 시험한다.
 
 **작업**
 

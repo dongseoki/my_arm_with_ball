@@ -11,18 +11,23 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>moveit_task_constructor_core</depend>
+  <depend>moveit_task_constructor_msgs</depend>
+  <depend>controller_manager_msgs</depend>
+  <depend>control_msgs</depend>
+  <depend>action_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>shape_msgs</depend>
+
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>controller_manager_msgs</exec_depend>
-  <exec_depend>control_msgs</exec_depend>
-  <exec_depend>action_msgs</exec_depend>
   <exec_depend>builtin_interfaces</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
-  <exec_depend>geometry_msgs</exec_depend>
-  <exec_depend>moveit_msgs</exec_depend>
-  <exec_depend>std_msgs</exec_depend>
-  <exec_depend>std_srvs</exec_depend>
-  <exec_depend>shape_msgs</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
 

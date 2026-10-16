@@ -1,0 +1,27 @@
+pick_and_place_test:
+  ros__parameters:
+    ready_timeout: 120.0
+    operation_timeout: 90.0
+    state_max_age: 2.0
+    place_timeout: 30.0
+    stable_speed: 0.02
+    stable_duration: 1.0
+    planning_time: 30.0
+    velocity_scaling: 0.1
+    acceleration_scaling: 0.1
+
+    # If start_joints is omitted, return to the six measured arm joints at startup.
+    pregrasp_joints: [-0.6082914162445299, 0.774475422756991,
+                      0.7405722030642679, -3.0858439511376563,
+                      1.570796327804393, 0.962504912344154]
+
+    # World-frame rg2_hand poses: x, y, z, qx, qy, qz, qw.
+    grasp_pose: [0.55, -0.25, 0.23, 0.0, 0.7071067811865476, 0.0, 0.7071067811865476]
+    lift_pose: [0.55, -0.25, 0.40, 0.0, 0.7071067811865476, 0.0, 0.7071067811865476]
+    # Place XY denotes desired ball center; implementation compensates measured hand-to-ball offset.
+    place_pose: [0.75, 0.25, 0.40, 0.0, 0.7071067811865476, 0.0, 0.7071067811865476]
+    retreat_pose: [0.65, 0.25, 0.40, 0.0, 0.7071067811865476, 0.0, 0.7071067811865476]
+
+    # Conservative world-frame limits for the ball CENTER, already inset by radius.
+    # Validate against the measured settled pose in the Gazebo basket.
+    basket_bounds: [0.71, 0.79, 0.244, 0.256, 0.033, 0.11]
