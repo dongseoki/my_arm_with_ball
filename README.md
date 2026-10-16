@@ -79,6 +79,11 @@ simulation.launch.py headless:=true`. This also disables RViz by default.
 The launch sets Gazebo's working directory to the installed bringup package
 so the SDF plugin can load its controller YAML through a relative path.
 
+### pick and place test 방법
+```sh
+ros2 launch my_arm_with_ball_bringup pick_and_place_test.launch.py headless:=false rviz:=true
+```
+
 ## MoveIt planning
 
 The `my_arm_with_ball_moveit_config` package provides a planning-only MoveIt
