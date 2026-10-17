@@ -1,27 +1,43 @@
 pick_and_place_test:
   ros__parameters:
+    # 준비 조건(컨트롤러, MoveIt, 로봇/작업 장면)이 갖춰질 때까지 기다리는 최대 시간(초).
     ready_timeout: 120.0
+    # 각 작업 동작/비동기 작업이 완료되기를 기다리는 제한 시간(초).
     operation_timeout: 90.0
+    # 관절 상태와 Gazebo 공 pose 등 입력을 최신으로 인정하는 최대 경과 시간(초).
     state_max_age: 2.0
+    # 공이 바구니 안에서 안정 조건을 만족하기까지 기다리는 최대 시간(초).
     place_timeout: 30.0
+    # 놓기 안정 판정의 최대 공 선속도(m/s). 이 값 이하를 안정 상태로 본다.
     stable_speed: 0.02
+    # 공이 바구니 안에 있고 stable_speed 이하인 상태를 연속 유지해야 하는 시간(초).
     stable_duration: 1.0
+    # MTC 및 관련 계획 단계별 계획 제한 시간(초).
     planning_time: 30.0
+    # 계획된 궤적의 최대 속도 비율(0 초과~1 이하, 1은 상한 사용).
     velocity_scaling: 0.1
+    # 계획된 궤적의 최대 가속도 비율(0 초과~1 이하, 1은 상한 사용).
     acceleration_scaling: 0.1
 
-    # If start_joints is omitted, return to the six measured arm joints at startup.
+    # 시작 관절 목표(start_joints). 지정하지 않으면 시작 시 측정한 팔 관절값을
+    # 작업 종료 후 복귀 목표로 사용한다. 배열 순서는 UR5 팔 관절 6개의 순서다.
+    # pregrasp_joints는 공에 접근하기 전에 이동할 팔 관절 목표(rad)다.
     pregrasp_joints: [-0.6082914162445299, 0.774475422756991,
                       0.7405722030642679, -3.0858439511376563,
                       1.570796327804393, 0.962504912344154]
 
-    # World-frame rg2_hand poses: x, y, z, qx, qy, qz, qw.
+    # 아래 pose는 모두 world 좌표계의 rg2_hand 목표다. 배열 순서는
+    # 위치 x,y,z (m), 방향 quaternion qx,qy,qz,qw다. MTC가 도달 궤적을 계획한다.
+    # 공에 접근할 손의 위치와 방향.
     grasp_pose: [0.55, -0.25, 0.23, 0.0, 0.7071067811865476, 0.0, 0.7071067811865476]
+    # 공을 들어 올릴 손 목표 pose. 구현은 현재 손 높이에서 이 z까지 수직으로 들어 올린다.
     lift_pose: [0.55, -0.25, 0.40, 0.0, 0.7071067811865476, 0.0, 0.7071067811865476]
-    # Place XY denotes desired ball center; implementation compensates measured hand-to-ball offset.
+    # 바구니 위 놓기 목표 pose. XY는 목표 공 중심 위치이며, 구현이 측정된 손-공 오프셋을 보정한다.
     place_pose: [0.75, 0.25, 0.40, 0.0, 0.7071067811865476, 0.0, 0.7071067811865476]
+    # 공을 놓은 뒤 이동할 손의 후퇴 pose.
     retreat_pose: [0.65, 0.25, 0.40, 0.0, 0.7071067811865476, 0.0, 0.7071067811865476]
 
-    # Conservative world-frame limits for the ball CENTER, already inset by radius.
-    # Validate against the measured settled pose in the Gazebo basket.
+    # 놓기 성공 판정에 사용할 공 중심의 world 좌표 범위(m):
+    # [x_min, x_max, y_min, y_max, z_min, z_max]. 공 반지름을 고려해 안쪽으로 여유를 둔 값이다.
+    # 실제 Gazebo 바구니에 정착한 공 위치와 대조해 검증할 것.
     basket_bounds: [0.71, 0.79, 0.244, 0.256, 0.033, 0.11]
