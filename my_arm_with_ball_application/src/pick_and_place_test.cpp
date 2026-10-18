@@ -569,6 +569,23 @@ private:
             mtc::stages::Connect::GroupPlannerVector{{"ur5", planner}});
         connect->setTimeout(planning_time_); task.add(std::move(connect)); task.add(std::move(ik));
     }
+    /**
+     * @brief 그리퍼를 열고 공을 잡기 직전의 자세까지 이동하는 MTC Task.
+     * @verbatim
+     * Task 생성 전: touchAllowed(true)로 손-공 접촉을 Planning Scene에서 허용
+     *
+     * ↕ measured current scene       [FixedState: 현재 Planning Scene]
+     * ↓ open fingers                 [MoveTo: 그리퍼 관절 → {1.18, 1.18}]
+     * ↓ start pose                   [MoveTo: 팔 관절 → start_]
+     * ↓ pregrasp                     [MoveTo: 팔 관절 → pregrasp_]
+     * ‖ connect to approach apple    [Connect: pregrasp에서 목표 IK 자세까지 연결]
+     * ↕ approach apple IK            [ComputeIK: 손 목표 pose → 팔 관절 자세]
+     *     ↕ approach apple pose      [GeneratePose: grasp_, pregrasp 단계 관측]
+     * @endverbatim
+     * 화살표는 생성(↕), 이동(↓), 연결(‖) 역할을 구분한 개요다.
+     * addJointMove/addPoseMove는 단계만 추가하며, executeTask(task)가 계획·실행한다.
+     * 접촉 닫기·Gazebo 부착은 이후 closeContact()에서, 장면 부착·운반은 후속 상태에서 수행한다.
+     */
     void approach()
     {
         touchAllowed(true);
@@ -631,6 +648,25 @@ private:
             throw;
         }
     }
+    /**
+     * @brief 부착된 공을 수직으로 들어 올리고, 별도의 Task로 바구니 위까지 운반한다.
+     * @verbatim
+     * Task 1: stage5 lift
+     * ↕ measured current scene       [FixedState: 현재 Planning Scene]
+     * ↓ lift apple vertically        [MoveRelative + CartesianPath: world +Z 이동]
+     *
+     * executeTask(lift) 완료 → Gazebo 부착 확인 → 측정된 손-공 XY 오프셋으로 목표 보정
+     *
+     * Task 2: stage5 transport
+     * ↕ measured current scene       [FixedState: lift 후 새로 읽은 Planning Scene]
+     * ‖ connect to above basket      [Connect: 현재 자세에서 목표 IK 자세까지 경로 생성]
+     * ↕ above basket IK              [ComputeIK: 보정된 목표 pose의 관절 자세 계산]
+     *     ↕ above basket pose        [GeneratePose: 보정된 place_ 목표]
+     * @endverbatim
+     * 각 Task는 executeTask()에서 계획·실행한다. 두 Task를 한 번에 미리 계획하지 않는다.
+     * 부착 상태는 lift 전후 및 운반 후에 확인한다. 여기서는 공을 놓지 않는다.
+     * 중간의 model Task는 손 위치 계산에 필요한 로봇 모델만 읽으며 실행하지 않는다.
+     */
     void transport()
     {
         requireAttachment(true);
@@ -665,6 +701,19 @@ private:
         executeTask(carry);
         requireAttachment(true);
     }
+    /**
+     * @brief 그리퍼를 연 뒤 Gazebo와 MoveIt에서 공을 분리한다.
+     * @verbatim
+     * Task 생성 전: Gazebo 부착 상태 확인
+     *
+     * ↕ measured current scene       [FixedState: 현재 Planning Scene]
+     * ↓ open fingers                 [MoveTo: 그리퍼 관절 → {1.18, 1.18}]
+     *
+     * executeTask(task) 완료 → trigger(false) → syncScene(false)
+     * @endverbatim
+     * Gazebo 분리 요청·확인과 Planning Scene 분리는 MTC Stage가 아니라 Task 실행 후 처리다.
+     * 공이 바구니 안에서 안정됐는지는 이후 VERIFY_PLACE 상태에서 확인한다.
+     */
     void release()
     {
         requireAttachment(true);
@@ -758,6 +807,18 @@ private:
                 case State::TRANSPORT: transport(); break;
                 case State::RELEASE: release(); break;
                 case State::REFRESH_SCENE: requireAttachment(false); syncScene(false, true); break;
+                /**
+                 * @brief 놓기 성공 후 손을 후퇴시키고 시작 관절 자세로 복귀하는 Task.
+                 * @verbatim
+                 * ↕ measured current scene       [FixedState: 최종 공 위치가 반영된 장면]
+                 * ‖ connect to retreat           [Connect: 현재 자세에서 후퇴 IK 자세까지 경로 생성]
+                 * ↕ retreat IK                   [ComputeIK: retreat_ 목표의 관절 자세 계산]
+                 *     ↕ retreat pose             [GeneratePose: retreat_]
+                 * ↓ return start                 [MoveTo: 팔 관절 → start_]
+                 * @endverbatim
+                 * executeTask(task)로 계획·실행한 뒤 touchAllowed(false)로 손-공 접촉 허용을 해제한다.
+                 * 이 작업이 정상 반환하면 다음 tick()에서 SUCCEEDED_WAITING으로 전환한다.
+                 */
                 case State::RETURN: {
                     mtc::Task task; auto * start = configureTask(task, "stage5 return");
                     addPoseMove(task, "retreat", retreat_, start);
