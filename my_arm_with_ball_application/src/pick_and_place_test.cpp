@@ -161,8 +161,20 @@ public:
     }
 
 private:
-    enum class State {WAIT_READY, APPROACH, CLOSE, ATTACH, TRANSPORT, RELEASE,
-        VERIFY_PLACE, REFRESH_SCENE, RETURN, SUCCEEDED_WAITING, FAILED_WAITING};
+    /// @brief 자동 1회 Pick-and-Place의 실행 상태. tick()이 작업 결과에 따라 전환한다.
+    enum class State {
+        WAIT_READY,       ///< 로봇 제어기, MoveIt, 센서 정보와 작업 장면이 준비되기를 기다리는 상태를 의미한다.
+        APPROACH,         ///< 그리퍼를 열고 준비 자세를 거쳐 공을 잡을 위치로 이동하는 상태를 의미한다.
+        CLOSE,            ///< 공에 닿을 때까지 그리퍼를 닫고, 잡은 공을 Gazebo에서 손에 부착하는 상태를 의미한다.
+        ATTACH,           ///< Gazebo에서 잡은 공을 MoveIt도 손에 붙은 물체로 인식하도록 반영하고 확인하는 상태를 의미한다.
+        TRANSPORT,        ///< 잡은 공을 위로 들어 올린 뒤 바구니 위까지 옮기는 상태를 의미한다.
+        RELEASE,          ///< 그리퍼를 열어 공을 손에서 분리하고, MoveIt에도 분리 결과를 반영하는 상태를 의미한다.
+        VERIFY_PLACE,     ///< 놓은 공이 바구니 안에 있고 일정 시간 거의 움직이지 않는지 확인하며 기다리는 상태를 의미한다.
+        REFRESH_SCENE,    ///< 안정된 공의 최신 위치를 MoveIt 작업 장면에 다시 반영하는 상태를 의미한다.
+        RETURN,           ///< 공을 놓은 위치에서 물러나 저장된 시작 관절 자세로 돌아가는 상태를 의미한다.
+        SUCCEEDED_WAITING, ///< 작업을 성공적으로 마친 뒤 재실행 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
+        FAILED_WAITING   ///< 작업 실패 원인을 기록한 뒤 자동 재시도나 복귀 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
+    };
     template<class T> T parameter(const std::string & name, const T & fallback)
     {
         if (!has_parameter(name)) {declare_parameter<T>(name, fallback);}
