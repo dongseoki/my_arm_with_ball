@@ -157,7 +157,7 @@ public:
         }
         // Worker awaits check stopping every 50ms; MTC plans have an explicit
         // timeout and receive preempt above. Join before destroying clients/data.
-        if (work_.valid()) {work_.wait();}
+        if (work_.valid()) {work_.wait();}  // 시작한 작업의 결과를 아직 가져오지 않았는지 확인한다.
     }
 
 private:
@@ -703,7 +703,7 @@ private:
         // All shared observation/state accesses use this lock. Blocking calls only run in work_.
         std::lock_guard<std::mutex> lock(mutex_);
         if (state_ == State::SUCCEEDED_WAITING || state_ == State::FAILED_WAITING) {return;}
-        if (work_.valid()) {
+        if (work_.valid()) {  // 시작한 작업의 결과를 아직 가져오지 않았는지 확인한다.
             if (work_.wait_for(0ms) != std::future_status::ready) {return;}
             try {
                 const auto reason = work_.get();
