@@ -556,18 +556,25 @@ private:
     void addPoseMove(mtc::Task & task, const std::string & label,
         const geometry_msgs::msg::PoseStamped & pose, mtc::Stage * start)
     {
-        auto planner = std::make_shared<mtc::solvers::PipelinePlanner>(shared_from_this());
-        planner->setPlannerId("ompl", "RRTConnectkConfigDefault");
-        planner->setMaxVelocityScalingFactor(velocity_); planner->setMaxAccelerationScalingFactor(acceleration_);
-        auto generated = std::make_unique<mtc::stages::GeneratePose>(label + " pose");
-        generated->setPose(pose); generated->setMonitoredStage(start);
-        auto ik = std::make_unique<mtc::stages::ComputeIK>(label + " IK", std::move(generated));
-        ik->setGroup("ur5"); ik->setIKFrame("rg2_hand"); ik->setMaxIKSolutions(32);
-        ik->setMinSolutionDistance(.1); ik->setTimeout(planning_time_);
-        ik->properties().configureInitFrom(mtc::Stage::INTERFACE, {"target_pose"});
+        auto planner = std::make_shared<mtc::solvers::PipelinePlanner>(shared_from_this());  // 현재 노드를 사용하는 MoveIt 경로 계획기를 생성한다.
+        planner->setPlannerId("ompl", "RRTConnectkConfigDefault");  // OMPL의 RRTConnect 경로 계획 알고리즘을 선택한다.
+        planner->setMaxVelocityScalingFactor(velocity_);  // 관절 최대 속도의 사용 비율을 설정한다.
+        planner->setMaxAccelerationScalingFactor(acceleration_);  // 관절 최대 가속도의 사용 비율을 설정한다.
+        auto generated = std::make_unique<mtc::stages::GeneratePose>(label + " pose");  // 목표 위치와 방향을 생성하는 단계를 만든다.
+        generated->setPose(pose);  // 손이 도달할 목표 위치와 방향을 지정한다.
+        generated->setMonitoredStage(start);  // 목표 생성에 참고할 앞 단계를 지정한다.
+        auto ik = std::make_unique<mtc::stages::ComputeIK>(label + " IK", std::move(generated));  // 목표 생성 단계를 감싸는 IK 계산 단계를 만든다.
+        ik->setGroup("ur5");  // IK를 계산할 관절 그룹을 ur5로 지정한다.
+        ik->setIKFrame("rg2_hand");  // 목표 위치와 방향에 맞출 손 좌표계를 지정한다.
+        ik->setMaxIKSolutions(32);  // 찾을 IK 해의 최대 개수를 32개로 설정한다.
+        ik->setMinSolutionDistance(.1);  // 중복에 가까운 IK 해를 제외할 최소 관절 공간 거리를 설정한다.
+        ik->setTimeout(planning_time_);  // IK 단계의 계산 제한 시간을 설정한다.
+        ik->properties().configureInitFrom(mtc::Stage::INTERFACE, {"target_pose"});  // 인터페이스의 target_pose 속성을 IK 목표로 받아 사용한다.
         auto connect = std::make_unique<mtc::stages::Connect>("connect to " + label,
             mtc::stages::Connect::GroupPlannerVector{{"ur5", planner}});
-        connect->setTimeout(planning_time_); task.add(std::move(connect)); task.add(std::move(ik));
+        connect->setTimeout(planning_time_);
+        task.add(std::move(connect));
+        task.add(std::move(ik));
     }
     /**
      * @brief 그리퍼를 열고 공을 잡기 직전의 자세까지 이동하는 MTC Task.
