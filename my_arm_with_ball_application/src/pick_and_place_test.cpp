@@ -874,6 +874,7 @@ private:
     }
     void closeContact()
     {
+        // 1단계: 양쪽 손가락 관절을 닫기 목표로 설정하고 계획 조건을 구성한다.
         MoveGroup::Goal goal;
         auto &request = goal.request;
         request.group_name = "gripper";
@@ -898,6 +899,7 @@ private:
         request.goal_constraints.push_back(constraints);
         goal.planning_options.planning_scene_diff.is_diff = true;
         goal.planning_options.planning_scene_diff.robot_state.is_diff = true;
+        // 2단계: MoveGroup Action에 닫기 goal을 보내고 승인되지 않으면 실패 처리한다.
         auto handle = sendGoal(move_, goal, 10., "close acceptance");
         if (!handle)
         {
@@ -906,6 +908,7 @@ private:
         auto result_future = move_->async_get_result(handle);
         try
         {
+            // 3단계: 최신 접촉 신호 또는 닫기 Action 종료를 기다린다.
             const auto begin = Clock::now();
             bool contact = false;
             while (true)
@@ -927,6 +930,7 @@ private:
             {
                 throw std::runtime_error("Gripper finished closing without contact");
             }
+            // 4단계: 접촉 뒤에도 goal이 진행 중이면 취소하고 최종 결과를 확인한다.
             if (result_future.wait_for(0ms) != std::future_status::ready)
             {
                 const auto cancel = await(move_->async_cancel_goal(handle), 5., "close cancellation");
@@ -940,6 +944,7 @@ private:
             {
                 throw std::runtime_error("Close did not terminate successfully/canceled");
             }
+            // 5단계: 실제 손가락 관절값과 최소 개방량 조건을 확인한다.
             const auto q = measured();
             if (q.at(FINGERS[0]) < -.002 || q.at(FINGERS[1]) < -.002 ||
                 q.at(FINGERS[0]) + q.at(FINGERS[1]) <= 5. * M_PI / 180.)
@@ -947,6 +952,7 @@ private:
                 throw std::runtime_error("Contact close opening <= 5 degrees");
             }
             // Gazebo requires recent contact: request attachment immediately after close termination.
+            // 6단계: Gazebo 부착을 요청하고 실제 부착 상태가 확인될 때까지 기다린다.
             trigger(true);
         }
         catch (...)
