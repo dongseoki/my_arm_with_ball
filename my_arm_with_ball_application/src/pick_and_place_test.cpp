@@ -495,9 +495,23 @@ private:
         diff.allowed_collision_matrix = matrix;
         apply(diff);
     }
+    /**
+     * @brief Planning Scene의 공이 기대한 소속·형상·좌표계·위치로 등록됐는지 검증한다.
+     * @param attached true이면 rg2_hand에 부착된 공 하나만, false이면 world 물체 목록의
+     *                 공 하나만 존재해야 한다.
+     * @param expected 비교 기준 공. header.frame_id와 primitive_poses[0]의 중심 위치를 사용한다.
+     * @details 장면 조회 → 공 수집 → 소속·개수 확인 → 형상·좌표계 확인 → 중심 위치 계산
+     *          → 위치 오차 확인의 6단계로 처리한다. 반지름은 0.0325 m를 기준으로 검사한다.
+     *          장면을 변경하거나 Gazebo의 실제 파지 상태를 확인하지는 않는다.
+     *          구의 중심 위치만 비교하며 공의 방향 일치 여부는 검사하지 않는다.
+     * @throws std::runtime_error 장면 조회에 실패하거나 공의 소속·개수·형상·좌표계가
+     *                            맞지 않거나 중심 위치 오차가 0.005 m를 초과한 경우.
+     */
     void verifyScene(bool attached, const moveit_msgs::msg::CollisionObject &expected)
     {
+        // 1. MoveIt에서 현재 Planning Scene을 조회한다.
         const auto current = scene();
+        // 2. 양쪽 목록의 apple 개수를 세고, 기대한 소속과 부착 링크에 맞는 공을 수집한다.
         std::vector<moveit_msgs::msg::CollisionObject> objects;
         size_t world_count = 0, attached_count = 0;
         for (const auto &obj : current.world.collision_objects)
@@ -522,10 +536,12 @@ private:
                 }
             }
         }
+        // 3. 원하는 목록에 공이 정확히 하나 있고 반대쪽에는 없으며, 검증 후보도 하나인지 확인한다.
         if (world_count != (attached ? 0u : 1u) || attached_count != (attached ? 1u : 0u) || objects.size() != 1)
         {
             throw std::runtime_error("Planning Scene world/attached membership mismatch");
         }
+        // 4. 단일 구 형상, 반지름 0.0325 m(허용 오차 1e-6 m), 기대한 좌표계인지 확인한다.
         const auto &obj = objects.front();
         if (obj.primitives.size() != 1 || obj.primitive_poses.size() != 1 ||
             obj.primitives[0].type != shape_msgs::msg::SolidPrimitive::SPHERE ||
@@ -534,8 +550,8 @@ private:
         {
             throw std::runtime_error("Planning Scene sphere geometry mismatch");
         }
-        // MoveIt may canonicalize primitive_poses into the CollisionObject origin.
-        // Compare their composition rather than assuming the origin stays identity.
+        // 5. 물체 원점의 위치·회전과 구의 로컬 중심을 합성해 header.frame_id 기준 중심을 계산한다.
+        // MoveIt이 primitive_poses를 물체 원점 쪽으로 재배치할 수 있어 로컬 위치만 비교하지 않는다.
         const auto &origin = obj.pose;
         Eigen::Quaterniond rotation(origin.orientation.w, origin.orientation.x,
                                     origin.orientation.y, origin.orientation.z);
@@ -551,6 +567,7 @@ private:
         const Eigen::Vector3d actual = Eigen::Vector3d(origin.position.x, origin.position.y,
                                                        origin.position.z) +
                                        rotation * Eigen::Vector3d(local.x, local.y, local.z);
+        // 6. 기대한 중심과의 거리 오차가 0.005 m(5 mm)를 초과하면 검증 실패로 처리한다.
         const auto &b = expected.primitive_poses[0].position;
         if ((actual - Eigen::Vector3d(b.x, b.y, b.z)).norm() > .005)
         {
