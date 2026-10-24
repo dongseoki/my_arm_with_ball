@@ -560,13 +560,26 @@ private:
                                      std::to_string(b.y) + "," + std::to_string(b.z));
         }
     }
+    /**
+     * @brief Gazebo에서 측정한 공의 위치·자세를 MoveIt Planning Scene에 반영하고 검증한다.
+     * @param attached true이면 손에 부착된 물체로, false이면 world의 독립 물체로 등록한다.
+     * @param refresh attached가 false일 때 true이면 기존 부착 정보 제거를 생략하고
+     *                world 물체를 갱신한다. attached가 true이면 사용하지 않는다.
+     * @details 측정 → 부착 여부에 따른 변경 내용 구성 → 적용 → 검증의 4단계로 처리한다.
+     *          Gazebo의 실제 부착·분리는 수행하지 않고 MoveIt의 충돌 물체 정보만 동기화한다.
+     * @throws std::runtime_error 측정값 또는 공의 자세가 유효하지 않거나,
+     *                            Planning Scene 적용·검증에 실패한 경우.
+     */
     void syncScene(bool attached, bool refresh = false)
     {
+        // 1. 공의 현재 위치·자세를 읽고 변경 메시지와 검증 기준을 준비한다.
         const auto measured_ball = ball();
         moveit_msgs::msg::PlanningScene diff;
         moveit_msgs::msg::CollisionObject expected;
+        // 2. 부착 여부에 맞게 Planning Scene에 반영할 변경 내용을 구성한다.
         if (attached)
         {
+            // 현재 관절값으로 손의 world 기준 위치·자세를 계산한다.
             mtc::Task model_task;
             model_task.loadRobotModel(shared_from_this());
             moveit::core::RobotState state(model_task.getRobotModel());
@@ -583,6 +596,7 @@ private:
             Eigen::Isometry3d world_ball = Eigen::Isometry3d::Identity();
             world_ball.linear() = orientation.normalized().toRotationMatrix();
             world_ball.translation() = Eigen::Vector3d(p.position.x, p.position.y, p.position.z);
+            // world 기준 공의 위치·자세를 rg2_hand 기준으로 변환한다.
             const auto relative = hand.inverse() * world_ball;
             geometry_msgs::msg::Pose local;
             local.position.x = relative.translation().x();
@@ -593,6 +607,7 @@ private:
             local.orientation.y = q.y();
             local.orientation.z = q.z();
             local.orientation.w = q.w();
+            // 변환한 공을 손에 부착된 충돌 물체로 등록한다.
             expected = sphere(local, "rg2_hand");
             moveit_msgs::msg::AttachedCollisionObject object;
             object.link_name = "rg2_hand";
@@ -602,6 +617,7 @@ private:
         }
         else
         {
+            // 일반 분리에서는 부착 정보를 제거하고, 단순 갱신에서는 제거를 생략한다.
             if (!refresh)
             {
                 moveit_msgs::msg::AttachedCollisionObject object;
@@ -610,10 +626,13 @@ private:
                 object.object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
                 diff.robot_state.attached_collision_objects.push_back(object);
             }
+            // 측정한 공을 world 기준의 독립 충돌 물체로 등록한다.
             expected = sphere(measured_ball.pose, "world");
             diff.world.collision_objects.push_back(expected);
         }
+        // 3. 준비한 변경 내용을 MoveIt Planning Scene에 적용한다.
         apply(diff);
+        // 4. 공의 world/attached 소속·개수, 구 형상·반지름, 좌표계·위치를 검증한다.
         verifyScene(attached, expected);
     }
     void requireAttachment(bool value)
