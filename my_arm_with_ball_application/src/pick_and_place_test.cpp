@@ -843,6 +843,15 @@ private:
         task.add(std::move(stage));
         return result;
     }
+    /**
+     * @brief 지정한 손 pose에 도달하기 위한 IK와 경로 계획 단계를 task에 추가한다.
+     * @details 이 함수는 단계를 구성할 뿐 계획 실행이나 로봇 이동을 직접 수행하지 않는다.
+     *          실제 계획과 실행은 호출자가 executeTask(task)를 호출할 때 수행된다.
+     * @param task 이동 Stage를 추가할 MTC 작업.
+     * @param label Stage 이름에 사용할 설명 문자열.
+     * @param pose rg2_hand이 도달할 목표 위치와 방향.
+     * @param start 목표 pose 생성 시 참조할 선행 Stage.
+     */
     void addPoseMove(mtc::Task &task, const std::string &label,
                      const geometry_msgs::msg::PoseStamped &pose, mtc::Stage *start)
     {
