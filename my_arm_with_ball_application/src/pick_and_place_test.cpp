@@ -459,6 +459,14 @@ private:
         object.primitive_poses.push_back(pose);
         return object;
     }
+    /**
+     * @brief MoveIt Planning Scene에서 공과 TOUCH에 지정된 링크 사이의 충돌 허용 여부를 설정한다.
+     * @param allowed true이면 공과 해당 링크의 접촉을 허용하고, false이면 충돌 검사 대상으로 되돌린다.
+     * @details 현재 Allowed Collision Matrix를 조회하고 필요한 항목을 추가한 뒤 변경 내용을 적용한다.
+     *          공(apple)과 바닥(pick_area_floor) 사이의 충돌은 allowed 값과 관계없이 항상 허용한다.
+     *          MoveIt의 충돌 검사 규칙만 변경하며 Gazebo의 물리적 접촉이나 부착 상태는 변경하지 않는다.
+     * @throws std::runtime_error Planning Scene 조회 또는 변경 적용에 실패한 경우.
+     */
     void touchAllowed(bool allowed)
     {
         auto matrix = scene().allowed_collision_matrix;
