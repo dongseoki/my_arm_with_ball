@@ -55,6 +55,12 @@ static const std::vector<std::string> TOUCH = {"rg2_hand", "rg2_leftfinger", "rg
 class PickAndPlace : public rclcpp::Node
 {
 public:
+    /**
+     * @brief 자동 1회 Pick-and-Place 노드의 설정과 ROS 인터페이스를 초기화한다.
+     * @details 파라미터를 검증하고 관측 구독, 서비스·Action 클라이언트, 100 ms 타이머를 생성한다.
+     *          실제 작업은 생성자에서 실행하지 않고 tick()의 준비 확인 이후 시작한다.
+     * @throws std::invalid_argument 목표 자세, 관절값 또는 시간·속도 등의 설정값이 유효하지 않은 경우.
+     */
     PickAndPlace() : Node("pick_and_place_test", rclcpp::NodeOptions()
                                                      .automatically_declare_parameters_from_overrides(true))
     {
@@ -164,6 +170,10 @@ public:
         RCLCPP_INFO(get_logger(), "WAIT_READY: waiting for controllers, MoveIt and fresh simulation state");
     }
 
+    /**
+     * @brief 종료를 알리고 진행 중인 MTC 계획 중단을 요청한 뒤 비동기 작업 종료를 기다린다.
+     * @details 클라이언트와 관측 데이터가 파괴되기 전에 work_의 작업이 끝나도록 한다.
+     */
     ~PickAndPlace() override
     {
         stopping_ = true;
@@ -198,6 +208,13 @@ private:
         SUCCEEDED_WAITING, ///< 작업을 성공적으로 마친 뒤 재실행 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
         FAILED_WAITING     ///< 작업 실패 원인을 기록한 뒤 자동 재시도나 복귀 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
     };
+    /**
+     * @brief ROS 파라미터를 읽고, 아직 선언되지 않았다면 기본값으로 선언한다.
+     * @tparam T 파라미터 값의 자료형.
+     * @param name 파라미터 이름.
+     * @param fallback 미선언 파라미터에 사용할 기본값.
+     * @return 현재 설정된 파라미터 값.
+     */
     template <class T>
     T parameter(const std::string &name, const T &fallback)
     {
@@ -207,6 +224,13 @@ private:
         }
         return get_parameter(name).get_value<T>();
     }
+    /**
+     * @brief 위치와 쿼터니언 배열 파라미터를 world 기준 PoseStamped로 변환한다.
+     * @param name 목표 pose 파라미터 이름.
+     * @param defaults 기본값 배열. 순서는 x, y, z(m), qx, qy, qz, qw이다.
+     * @return 쿼터니언을 정규화한 world 기준 목표 위치·방향.
+     * @throws std::invalid_argument 원소가 7개가 아니거나 유한하지 않거나 쿼터니언 크기가 너무 작은 경우.
+     */
     geometry_msgs::msg::PoseStamped poseParameter(const std::string &name, const std::vector<double> &defaults)
     {
         const auto v = parameter(name, defaults);
@@ -231,14 +255,29 @@ private:
         p.pose.orientation.w = v[6] / norm;
         return p;
     }
+    /**
+     * @brief 단조 증가 시계를 기준으로 주어진 시각부터 경과한 시간을 계산한다.
+     * @param t 경과 시간 계산의 시작 시각.
+     * @return 현재까지 경과한 시간(초). ROS 시뮬레이션 시간이 아닌 실제 경과 시간을 사용한다.
+     */
     static double secondsSince(Clock::time_point t)
     {
         return std::chrono::duration<double>(Clock::now() - t).count();
     }
+    /**
+     * @brief 관측을 수신했으며 수신 후 경과 시간이 max_age_ 미만인지 확인한다.
+     * @param t 마지막 관측 수신 시각. 값이 없으면 미수신으로 판단한다.
+     * @return 최신 관측이면 true, 미수신이거나 오래된 관측이면 false.
+     */
     bool fresh(const std::optional<Clock::time_point> &t) const
     {
         return t && secondsSince(*t) < max_age_;
     }
+    /**
+     * @brief 팔과 그리퍼의 관측값이 모두 최신인지 검사하고 관절값 사본을 반환한다.
+     * @return 관측된 관절 이름과 위치(rad)의 맵.
+     * @throws std::runtime_error 필수 관절의 수신 시각이 없거나 관측이 오래된 경우.
+     */
     std::map<std::string, double> measured()
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -254,6 +293,11 @@ private:
         }
         return joints_;
     }
+    /**
+     * @brief 최신 world 좌표계 공 pose를 읽는다.
+     * @return Gazebo에서 관측한 공의 위치·방향 사본.
+     * @throws std::runtime_error 관측이 오래됐거나 수신되지 않았거나 world 좌표계가 아닌 경우.
+     */
     geometry_msgs::msg::PoseStamped ball()
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -263,6 +307,16 @@ private:
         }
         return pose_;
     }
+    /**
+     * @brief Future의 완료를 제한 시간 동안 기다린 뒤 결과를 가져온다.
+     * @tparam Future wait_for()와 get()을 제공하는 비동기 결과 자료형.
+     * @param future 결과를 기다릴 Future.
+     * @param timeout 실제 경과 시간 기준 대기 제한(초).
+     * @param label 시간 초과·종료 예외에 표시할 작업 설명.
+     * @return future.get()으로 얻은 결과.
+     * @throws std::runtime_error 대기 중 종료가 요청되거나 ROS가 종료되거나 제한 시간을 초과한 경우.
+     * @note Future 자체에 저장된 예외도 호출자에게 전달된다. tick()이 아닌 작업 스레드에서 사용한다.
+     */
     template <class Future>
     auto await(Future &&future, double timeout, const std::string &label)
     {
@@ -276,6 +330,18 @@ private:
         }
         return future.get();
     }
+    /**
+     * @brief Action goal을 보내고 서버의 승인 또는 거부 응답을 기다린다.
+     * @tparam ClientPtr Action 클라이언트 공유 포인터 자료형.
+     * @tparam Goal 전송할 Action goal 자료형.
+     * @param client goal을 보낼 Action 클라이언트.
+     * @param goal 전송할 작업 목표.
+     * @param timeout goal 응답 대기 제한(초). 작업 실행 완료 제한은 아니다.
+     * @param label 응답 대기와 취소 로그에 표시할 작업 설명.
+     * @return 승인된 goal handle. 거부되면 빈 포인터.
+     * @details 응답 대기가 실패한 뒤 승인된 goal도 취소하도록 응답 콜백과 상태를 공유한다.
+     * @note 전송·대기 중 발생한 예외는 취소 요청 처리 후 호출자에게 전달한다.
+     */
     template <class ClientPtr, class Goal>
     auto sendGoal(const ClientPtr &client, const Goal &goal, double timeout, const std::string &label)
     {
@@ -322,6 +388,15 @@ private:
             throw;
         }
     }
+    /**
+     * @brief goal 응답 대기가 실패한 뒤 확인된 goal에 비동기 취소를 요청한다.
+     * @tparam ClientPtr Action 클라이언트 공유 포인터 자료형.
+     * @tparam GoalHandlePtr goal handle 공유 포인터 자료형.
+     * @param client 취소와 최종 결과 조회에 사용할 Action 클라이언트.
+     * @param handle 취소할 goal handle.
+     * @param label 로그에 표시할 작업 설명.
+     * @details 취소 요청 수락 여부와 최종 결과를 콜백으로 기록한다. 취소 완료까지 기다리지는 않는다.
+     */
     template <class ClientPtr, class GoalHandlePtr>
     void cancelLateGoal(const ClientPtr &client, const GoalHandlePtr &handle, const std::string &label)
     {
@@ -348,6 +423,15 @@ private:
             RCLCPP_ERROR(logger, "%s late goal cancellation could not be confirmed: %s", label.c_str(), ex.what());
         }
     }
+    /**
+     * @brief 준비된 ROS 서비스에 요청을 보내고 최대 5초 동안 응답을 기다린다.
+     * @tparam Service 호출할 ROS 서비스 자료형.
+     * @param client 서비스 클라이언트.
+     * @param request 전송할 요청 메시지.
+     * @return 서비스 응답 공유 포인터.
+     * @throws std::runtime_error 서비스가 준비되지 않았거나 응답 대기 중 시간 초과·종료가 발생한 경우.
+     * @details 대기가 실패하면 클라이언트의 미완료 요청을 제거한 뒤 예외를 전달한다.
+     */
     template <class Service>
     auto call(typename rclcpp::Client<Service>::SharedPtr client,
               const std::shared_ptr<typename Service::Request> &request)
@@ -367,6 +451,11 @@ private:
             throw;
         }
     }
+    /**
+     * @brief MoveIt에 로봇 상태와 변환 등을 포함한 현재 Planning Scene을 요청한다.
+     * @return 서비스에서 수신한 Planning Scene 사본.
+     * @throws std::runtime_error 장면 조회 서비스를 사용할 수 없거나 응답 대기에 실패한 경우.
+     */
     moveit_msgs::msg::PlanningScene scene()
     {
         auto request = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
@@ -374,6 +463,13 @@ private:
         // Complete live scene, including robot state and transforms.
         return call<moveit_msgs::srv::GetPlanningScene>(get_scene_, request)->scene;
     }
+    /**
+     * @brief 관측, Action·서비스 인터페이스, 컨트롤러와 작업 장면의 준비 상태를 확인한다.
+     * @return 모두 준비됐으면 빈 문자열, 아직 준비되지 않았으면 첫 번째 미충족 조건 설명.
+     * @details 필수 컨트롤러의 active 상태와 장면의 apple·basket 존재 여부도 검사한다.
+     *          로봇 동작은 시작하지 않으며, 서비스 요청을 기다릴 수 있으므로 작업 스레드에서 호출한다.
+     * @throws std::runtime_error 컨트롤러 또는 Planning Scene 조회에 실패한 경우.
+     */
     std::string readiness()
     {
         {
@@ -435,6 +531,11 @@ private:
         }
         return "";
     }
+    /**
+     * @brief Planning Scene 변경 내용을 차이 메시지로 MoveIt에 적용한다.
+     * @param diff 적용할 변경 내용. 장면과 로봇 상태의 is_diff를 true로 설정해 전송한다.
+     * @throws std::runtime_error 서비스 호출에 실패하거나 MoveIt이 변경 내용을 거부한 경우.
+     */
     void apply(moveit_msgs::msg::PlanningScene diff)
     {
         diff.is_diff = true;
@@ -446,6 +547,12 @@ private:
             throw std::runtime_error("Planning Scene rejected diff");
         }
     }
+    /**
+     * @brief 반지름 0.0325 m인 공의 충돌 물체 메시지를 만든다.
+     * @param pose frame 좌표계 기준 공의 중심 위치와 방향.
+     * @param frame 공의 pose를 표현한 좌표계 이름.
+     * @return ID가 apple이고 작업이 ADD인 구형 충돌 물체. 장면에는 아직 적용하지 않는다.
+     */
     moveit_msgs::msg::CollisionObject sphere(const geometry_msgs::msg::Pose &pose, const std::string &frame)
     {
         moveit_msgs::msg::CollisionObject object;
@@ -660,6 +767,12 @@ private:
         // 4. 공의 world/attached 소속·개수, 구 형상·반지름, 좌표계·위치를 검증한다.
         verifyScene(attached, expected);
     }
+    /**
+     * @brief Gazebo의 최신 공 부착 상태가 기대값과 일치하는지 검사한다.
+     * @param value 기대하는 부착 상태. true는 부착, false는 분리 상태이다.
+     * @throws std::runtime_error 부착 관측이 미수신·오래된 값이거나 기대 상태와 다른 경우.
+     * @note 상태를 검사할 뿐 실제 부착·분리나 Planning Scene 변경은 수행하지 않는다.
+     */
     void requireAttachment(bool value)
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -668,6 +781,13 @@ private:
             throw std::runtime_error("Gazebo attachment state mismatch/stale");
         }
     }
+    /**
+     * @brief Gazebo에 공 부착 또는 분리를 요청하고 실제 관측으로 완료를 확인한다.
+     * @param attach true이면 부착 서비스, false이면 분리 서비스를 호출한다.
+     * @details 서비스 성공 후 최신 부착 관측이 요청 상태와 일치할 때까지 최대 3초 기다린다.
+     *          MoveIt Planning Scene 동기화는 수행하지 않는다.
+     * @throws std::runtime_error 서비스 호출·요청이 실패하거나 확인 대기 중 종료 또는 시간 초과가 발생한 경우.
+     */
     void trigger(bool attach)
     {
         auto client = attach ? attach_ : detach_;
@@ -693,6 +813,12 @@ private:
             std::this_thread::sleep_for(20ms);
         }
     }
+    /**
+     * @brief 실행 결과의 목표 관절값에 실제 관절이 도달했는지 최대 5초 동안 확인한다.
+     * @param targets 확인할 관절 이름과 최종 목표 위치(rad)의 맵.
+     * @details 각 관절 관측이 최신이고 목표 오차가 0.025 rad 이하여야 도달한 것으로 판단한다.
+     * @throws std::runtime_error 종료가 요청되거나 제한 시간 안에 목표 도달을 확인하지 못한 경우.
+     */
     void verifyJoints(const std::map<std::string, double> &targets)
     {
         const auto begin = Clock::now();
@@ -722,6 +848,14 @@ private:
             std::this_thread::sleep_for(20ms);
         }
     }
+    /**
+     * @brief MTC Task를 초기화·계획하고 첫 번째 해를 실행한 뒤 실제 관절 도달을 검증한다.
+     * @param task Stage 구성이 완료된 MTC 작업.
+     * @details 최대 3개 해를 요청하고 첫 번째 해의 궤적에 팔·그리퍼 컨트롤러를 지정한다.
+     *          실행 대기가 실패하면 취소와 최종 결과 확인을 시도한 뒤 원래 예외를 전달한다.
+     * @throws std::runtime_error 종료 요청, 계획 실패, 실행 거부·실패 또는 최종 관절 검증 실패 시.
+     * @note MTC 초기화·계획 API 자체의 예외도 전달된다. 대기 처리는 작업 스레드에서 수행한다.
+     */
     void executeTask(mtc::Task &task)
     {
         if (stopping_)
@@ -839,6 +973,17 @@ private:
         task.add(std::move(fixed));
         return start;
     }
+    /**
+     * @brief 지정한 관절 목표로 이동하는 MoveTo Stage를 MTC Task에 추가한다.
+     * @param task 이동 Stage를 추가할 MTC 작업.
+     * @param label Stage에 표시할 이름.
+     * @param group 이동할 MoveIt 관절 그룹 이름.
+     * @param names 목표를 지정할 관절 이름 목록.
+     * @param values names와 같은 순서의 목표 관절 위치(rad) 목록.
+     * @return task에 소유권이 전달된 MoveTo Stage의 포인터.
+     * @details OMPL 경로 계획기를 설정하고 Stage를 추가할 뿐, 계획·실행은 하지 않는다.
+     * @throws std::out_of_range values의 원소가 names보다 적은 경우.
+     */
     mtc::Stage *addJointMove(mtc::Task &task, const std::string &label, const std::string &group,
                              const std::vector<std::string> &names, const std::vector<double> &values)
     {
@@ -933,6 +1078,14 @@ private:
         addPoseMove(task, "approach apple", grasp_, pregrasp);
         executeTask(task);
     }
+    /**
+     * @brief 접촉할 때까지 그리퍼를 닫고 Gazebo에서 공을 손에 부착한다.
+     * @details MoveGroup Action으로 닫기를 실행하고 최신 접촉을 감지하면 진행 중인 goal을 취소한다.
+     *          최종 Action 결과와 손가락 개방량을 검사한 뒤 trigger(true)로 부착을 요청·확인한다.
+     *          실패 시 진행 중인 goal의 취소를 시도하며, MoveIt 장면의 부착은 후속 상태에서 처리한다.
+     * @throws std::runtime_error goal 거부, 접촉 확인 실패, 취소·실행 결과 이상,
+     *                           관절 상태·개방량 이상 또는 Gazebo 부착 확인 실패 시.
+     */
     void closeContact()
     {
         // 1단계: 양쪽 손가락 관절을 닫기 목표로 설정하고 계획 조건을 구성한다.
@@ -1128,6 +1281,10 @@ private:
         trigger(false);
         syncScene(false);
     }
+    /**
+     * @brief 현재 실행 상태를 로그에 사용할 이름으로 변환한다.
+     * @return state_에 대응하는 상태 이름 문자열.
+     */
     std::string stateName() const
     {
         switch (state_)
@@ -1156,11 +1313,21 @@ private:
             return "FAILED_WAITING";
         }
     }
+    /**
+     * @brief 실패한 단계와 이유를 ERROR로 기록하고 실패 대기 상태로 전환한다.
+     * @param reason 실패 원인을 설명하는 문자열.
+     * @details 자동 재시도·복귀·시뮬레이션 종료는 수행하지 않는다.
+     */
     void fail(const std::string &reason)
     {
         RCLCPP_ERROR(get_logger(), "STAGE5 FAILED stage=%s reason=%s; waiting without retry", stateName().c_str(), reason.c_str());
         state_ = State::FAILED_WAITING;
     }
+    /**
+     * @brief 실행 상태를 변경하고 새 상태의 시작 시각과 로그를 갱신한다.
+     * @param next 전환할 다음 상태.
+     * @note 상태만 변경하며 해당 상태의 작업을 직접 실행하지 않는다.
+     */
     void advance(State next)
     {
         state_ = next;
@@ -1199,6 +1366,12 @@ private:
         }
         return true;
     }
+    /**
+     * @brief 타이머마다 비동기 작업 결과와 관측 상태를 확인하고 다음 작업을 시작한다.
+     * @details 완료된 Future의 결과에 따라 상태를 전환하고, 준비·놓기 확인의 시간 초과를 처리한다.
+     *          오래 걸리는 계획·실행·서비스 대기는 work_에서 실행하며 이 콜백은 완료를 기다리지 않는다.
+     *          성공·실패 대기 상태에서는 새 작업을 시작하지 않는다.
+     */
     void tick()
     {
         // All shared observation/state accesses use this lock. Blocking calls only run in work_.
@@ -1371,6 +1544,12 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
 };
 
+/**
+ * @brief ROS를 초기화하고 Pick-and-Place 노드를 MultiThreadedExecutor로 실행한다.
+ * @param argc 명령행 인자 개수.
+ * @param argv ROS 인자를 포함한 명령행 인자 배열.
+ * @return 정상 종료 시 0, 노드 생성 또는 실행 중 표준 예외가 발생하면 1.
+ */
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
