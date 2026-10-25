@@ -1039,6 +1039,7 @@ private:
     void transport()
     {
         requireAttachment(true);
+        // Task 1: stage5 lift
         mtc::Task lift;
         configureTask(lift, "stage5 lift");
         moveit::core::RobotState lift_state(lift.getRobotModel());
@@ -1068,6 +1069,7 @@ private:
         executeTask(lift);
         requireAttachment(true);
         // Keep the measured ball under the intended basket release XY despite hand-relative offset.
+        // Task 2: stage5 transport
         mtc::Task model;
         model.loadRobotModel(shared_from_this());
         moveit::core::RobotState state(model.getRobotModel());
