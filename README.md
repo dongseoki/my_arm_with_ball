@@ -211,6 +211,15 @@ https://chatgpt.com/share/6aad354b-b584-83ee-bf4e-08efa79133ac
 colcon build --packages-select my_arm_with_ball_application --symlink-install
 ```
 
+# 4단계 잡기 동작 테스트
+```bash
+source /opt/ros/jazzy/setup.bash
+export GZ_VERSION=harmonic
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch my_arm_with_ball_bringup pick_grasp_test.launch.py headless:=true rviz:=false
+```
+
 # 코드 스니펫
 ```sh
 # 로컬에 받아온 MODEL SDF 찾기
