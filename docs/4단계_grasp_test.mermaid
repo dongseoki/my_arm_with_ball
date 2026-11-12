@@ -1,0 +1,34 @@
+flowchart TD
+    A(["시작<br/>L325-326"]) --> B["ROS2 초기화 및 GraspTest 생성<br/>L311-313"]
+    B --> C["run() 호출<br/>L315, L258"]
+    C --> D["Gazebo, MoveIt, Controller 준비 대기<br/>wait_ready() L259, L97-116"]
+    D --> E{"시작 시 공이<br/>이미 부착되어 있는가?<br/>L260-261"}
+    E -->|Yes| FAIL
+    E -->|No| F["빈 그리퍼 닫기<br/>L262-264"]
+    F --> G["공 없이 attach 요청<br/>실패해야 정상<br/>L265"]
+    G --> H["그리퍼 열기<br/>L266"]
+    H --> I["Pregrasp 자세로 이동<br/>L268-269"]
+    I --> J["공과 손가락 접촉 허용<br/>L270"]
+    J --> K["공 위로 손 이동 z=0.23<br/>L274"]
+    K --> L["손과 공 위치 확인<br/>L275-278"]
+    L --> M["그리퍼 닫기 및 공 부착<br/>L280"]
+    M --> N["공 부착 및 상대 위치 기록<br/>L281-284"]
+    N --> O["로봇팔 들어 올리기 z=0.35<br/>L285"]
+    O --> P{"공이 손을 따라<br/>올라갔는가?<br/>L286-292"}
+    P -->|No| FAIL
+    P -->|Yes| Q["공 분리 및 그리퍼 열기<br/>L293-298"]
+    Q --> R{"공이 자유낙하하여<br/>바닥에 도착했는가?<br/>L299-302"}
+    R -->|No| FAIL
+    R -->|Yes| S["Planning Scene 공 상태 갱신<br/>L303"]
+    S --> T["TEST PASSED<br/>L304-305"]
+    T --> U["접촉 허용 설정 해제<br/>L306-308"]
+    U --> V["종료 코드 0<br/>L316"]
+    FAIL["예외 발생"] --> W["TEST FAILED 로그<br/>L317-319"]
+    W --> X["종료 코드 1"]
+    V --> Z(["ROS2 노드 정리 및 종료<br/>L320-322"])
+    X --> Z
+
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef failure fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    class T,V success
+    class FAIL,W,X failure
