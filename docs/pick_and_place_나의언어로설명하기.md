@@ -307,3 +307,7 @@ REFRESH_SCENE은 `requireAttachment(false)`와 `syncScene(false, true)`를 호�
 - 안정성 조건은 `my_arm_with_ball_application/src/place_stability.hpp`와 대조했다.
 - 이 평가는 작성된 설명과 현재 코드의 일치 여부에 대한 정적 검토다. 빌드나 시뮬레이션을 실행한 결과는 아니다.
 - 위의 원문은 수정하지 않고 이 평가만 뒤에 추가했다.
+
+
+# 위 글을 읽은 인간의 의견
+* readiness 메서드 관련 : readiness 내용을 보니까 메서드 내용이 한눈에 안들어 온다. 한눈에 들어오도록 각 단계를 메서드화 시키는것은 어떠할지?
