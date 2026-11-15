@@ -472,37 +472,85 @@ private:
      */
     std::string readiness()
     {
+        if (const auto reason = checkObservationReadiness(); !reason.empty())
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!fresh(joint_received_) || !fresh(contact_received_) || !fresh(attached_received_) || !fresh(pose_received_))
+            return reason;
+        }
+        if (const auto reason = checkActionReadiness(); !reason.empty())
+        {
+            return reason;
+        }
+        if (const auto reason = checkServiceReadiness(); !reason.empty())
+        {
+            return reason;
+        }
+        if (const auto reason = checkControllerReadiness(); !reason.empty())
+        {
+            return reason;
+        }
+        return checkSceneReadiness();
+    }
+    /**
+     * @brief 필수 관측의 최신성과 시작 전 공의 비부착 상태를 확인한다.
+     * @return 모두 준비됐으면 빈 문자열, 아니면 첫 번째 미충족 조건 설명.
+     * @note 관측 검사 중에만 mutex_를 잠그고 서비스 대기 전에 해제한다.
+     */
+    std::string checkObservationReadiness()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!fresh(joint_received_) || !fresh(contact_received_) || !fresh(attached_received_) || !fresh(pose_received_))
+        {
+            return "fresh joint/contact/attachment/ball observations";
+        }
+        for (const auto &names : {ARM, FINGERS})
+        {
+            for (const auto &name : names)
             {
-                return "fresh joint/contact/attachment/ball observations";
-            }
-            for (const auto &names : {ARM, FINGERS})
-            {
-                for (const auto &name : names)
+                if (!joints_.count(name) || !joint_stamps_.count(name) ||
+                    secondsSince(joint_stamps_.at(name)) > max_age_)
                 {
-                    if (!joints_.count(name) || !joint_stamps_.count(name) ||
-                        secondsSince(joint_stamps_.at(name)) > max_age_)
-                    {
-                        return "fresh joint " + name;
-                    }
+                    return "fresh joint " + name;
                 }
             }
-            if (attached_.value_or(false))
-            {
-                return "ball unexpectedly attached before start";
-            }
         }
+        if (attached_.value_or(false))
+        {
+            return "ball unexpectedly attached before start";
+        }
+        return "";
+    }
+    /**
+     * @brief MoveIt·MTC와 팔·그리퍼 컨트롤러 Action 서버의 준비 상태를 확인한다.
+     * @return 모두 준비됐으면 빈 문자열, 아니면 미충족 조건 설명.
+     */
+    std::string checkActionReadiness()
+    {
         if (!move_->action_server_is_ready() || !execute_->action_server_is_ready() ||
             !arm_controller_->action_server_is_ready() || !gripper_controller_->action_server_is_ready())
         {
             return "MoveIt action interfaces";
         }
+        return "";
+    }
+    /**
+     * @brief Gazebo 부착·분리와 Planning Scene 적용 서비스의 준비 상태를 확인한다.
+     * @return 모두 준비됐으면 빈 문자열, 아니면 미충족 조건 설명.
+     */
+    std::string checkServiceReadiness()
+    {
         if (!attach_->service_is_ready() || !detach_->service_is_ready() || !apply_scene_->service_is_ready())
         {
             return "grasp/scene services";
         }
+        return "";
+    }
+    /**
+     * @brief 필수 컨트롤러 세 개가 모두 active 상태인지 조회한다.
+     * @return 모두 활성화됐으면 빈 문자열, 아니면 첫 번째 미활성 컨트롤러 설명.
+     * @throws std::runtime_error 컨트롤러 조회 서비스 호출에 실패한 경우.
+     */
+    std::string checkControllerReadiness()
+    {
         auto request = std::make_shared<controller_manager_msgs::srv::ListControllers::Request>();
         auto response = call<controller_manager_msgs::srv::ListControllers>(controllers_, request);
         for (const auto &name : {"joint_state_broadcaster", "arm_trajectory_controller", "gripper_trajectory_controller"})
@@ -517,6 +565,15 @@ private:
                 return std::string("active controller ") + name;
             }
         }
+        return "";
+    }
+    /**
+     * @brief Planning Scene에 공과 바구니가 world 충돌 물체로 존재하는지 확인한다.
+     * @return 모두 존재하면 빈 문자열, 아니면 첫 번째 누락 물체 설명.
+     * @throws std::runtime_error Planning Scene 조회에 실패한 경우.
+     */
+    std::string checkSceneReadiness()
+    {
         auto current = scene();
         for (const auto &id : {"apple", "basket"})
         {
