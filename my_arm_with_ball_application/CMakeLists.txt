@@ -21,6 +21,8 @@ add_executable(pick_and_place_test
   src/pick_and_place_test_main.cpp
   src/pick_and_place_test.cpp
   src/planning_scene_manager.cpp
+  src/mtc_task_executor.cpp
+  src/gazebo_manager.cpp
 )
 target_compile_features(pick_and_place_test PRIVATE cxx_std_17)
 ament_target_dependencies(pick_and_place_test

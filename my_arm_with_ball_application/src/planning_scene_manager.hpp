@@ -1,6 +1,7 @@
 #ifndef MY_ARM_WITH_BALL_APPLICATION_PLANNING_SCENE_MANAGER_HPP_
 #define MY_ARM_WITH_BALL_APPLICATION_PLANNING_SCENE_MANAGER_HPP_
 
+#include "attachment_state.hpp"
 #include <functional>
 #include <memory>
 #include <string>
@@ -17,7 +18,7 @@ namespace pick_place
 class PlanningSceneManager
 {
 public:
-    enum class AttachmentState { Attached, Detached };
+    using AttachmentState = pick_place::AttachmentState;
     enum class SceneUpdate { Attach, Detach, RefreshWorld };
     using GetScene = std::function<moveit_msgs::srv::GetPlanningScene::Response::SharedPtr(
         const moveit_msgs::srv::GetPlanningScene::Request::SharedPtr &)>;
