@@ -110,6 +110,19 @@ private:
         SUCCEEDED_WAITING, ///< 작업을 성공적으로 마친 뒤 재실행 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
         FAILED_WAITING     ///< 작업 실패 원인을 기록한 뒤 자동 재시도나 복귀 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
     };
+    /// @brief Gazebo 관측 또는 MoveIt 장면에서 기대하는 공의 부착 상태.
+    enum class AttachmentState
+    {
+        Attached,
+        Detached
+    };
+    /// @brief MoveIt 장면에 반영할 변경. 물리적인 부착·분리 요청과는 구분한다.
+    enum class SceneUpdate
+    {
+        Attach,
+        Detach,
+        RefreshWorld
+    };
     /**
      * @brief 파라미터를 읽고 검증한 뒤 놓기 안정성 판정 객체를 준비한다.
      * @details 기존 기본값과 검증 순서를 유지하며 ROS 통신 인터페이스는 생성하지 않는다.
@@ -656,7 +669,7 @@ private:
      *          MoveIt의 충돌 검사 규칙만 변경하며 Gazebo의 물리적 접촉이나 부착 상태는 변경하지 않는다.
      * @throws std::runtime_error Planning Scene 조회 또는 변경 적용에 실패한 경우.
      */
-    void touchAllowed(bool allowed)
+    void setHandBallCollisionAllowed(bool allowed)
     {
         auto matrix = scene().allowed_collision_matrix;
         auto names = TOUCH;
@@ -694,7 +707,7 @@ private:
     }
     /**
      * @brief Planning Scene의 공이 기대한 소속·형상·좌표계·위치로 등록됐는지 검증한다.
-     * @param attached true이면 rg2_hand에 부착된 공 하나만, false이면 world 물체 목록의
+     * @param attachment Attached이면 rg2_hand에 부착된 공 하나만, Detached이면 world 물체 목록의
      *                 공 하나만 존재해야 한다.
      * @param expected 비교 기준 공. header.frame_id와 primitive_poses[0]의 중심 위치를 사용한다.
      * @details 장면 조회 → 공 수집 → 소속·개수 확인 → 형상·좌표계 확인 → 중심 위치 계산
@@ -704,8 +717,9 @@ private:
      * @throws std::runtime_error 장면 조회에 실패하거나 공의 소속·개수·형상·좌표계가
      *                            맞지 않거나 중심 위치 오차가 0.005 m를 초과한 경우.
      */
-    void verifyScene(bool attached, const moveit_msgs::msg::CollisionObject &expected)
+    void verifyScene(AttachmentState attachment, const moveit_msgs::msg::CollisionObject &expected)
     {
+        const bool attached = attachment == AttachmentState::Attached;
         // 1. MoveIt에서 현재 Planning Scene을 조회한다.
         const auto current = scene();
         // 2. 양쪽 목록의 apple 개수를 세고, 기대한 소속과 부착 링크에 맞는 공을 수집한다.
@@ -776,16 +790,16 @@ private:
     }
     /**
      * @brief Gazebo에서 측정한 공의 위치·자세를 MoveIt Planning Scene에 반영하고 검증한다.
-     * @param attached true이면 손에 부착된 물체로, false이면 world의 독립 물체로 등록한다.
-     * @param refresh attached가 false일 때 true이면 기존 부착 정보 제거를 생략하고
-     *                world 물체를 갱신한다. attached가 true이면 사용하지 않는다.
+     * @param update Attach는 손에 부착, Detach는 부착 정보 제거 후 world 등록,
+     *               RefreshWorld는 부착 정보 제거 없이 world 물체 갱신을 수행한다.
      * @details 측정 → 부착 여부에 따른 변경 내용 구성 → 적용 → 검증의 4단계로 처리한다.
      *          Gazebo의 실제 부착·분리는 수행하지 않고 MoveIt의 충돌 물체 정보만 동기화한다.
      * @throws std::runtime_error 측정값 또는 공의 자세가 유효하지 않거나,
      *                            Planning Scene 적용·검증에 실패한 경우.
      */
-    void syncScene(bool attached, bool refresh = false)
+    void syncScene(SceneUpdate update)
     {
+        const bool attached = update == SceneUpdate::Attach;
         // 1. 공의 현재 위치·자세를 읽고 변경 메시지와 검증 기준을 준비한다.
         const auto measured_ball = ball();
         moveit_msgs::msg::PlanningScene diff;
@@ -832,7 +846,7 @@ private:
         else
         {
             // 일반 분리에서는 부착 정보를 제거하고, 단순 갱신에서는 제거를 생략한다.
-            if (!refresh)
+            if (update == SceneUpdate::Detach)
             {
                 moveit_msgs::msg::AttachedCollisionObject object;
                 object.link_name = "rg2_hand";
@@ -847,16 +861,17 @@ private:
         // 3. 준비한 변경 내용을 MoveIt Planning Scene에 적용한다.
         apply(diff);
         // 4. 공의 world/attached 소속·개수, 구 형상·반지름, 좌표계·위치를 검증한다.
-        verifyScene(attached, expected);
+        verifyScene(attached ? AttachmentState::Attached : AttachmentState::Detached, expected);
     }
     /**
      * @brief Gazebo의 최신 공 부착 상태가 기대값과 일치하는지 검사한다.
-     * @param value 기대하는 부착 상태. true는 부착, false는 분리 상태이다.
+     * @param expected 기대하는 부착 상태. Attached는 부착, Detached는 분리 상태이다.
      * @throws std::runtime_error 부착 관측이 미수신·오래된 값이거나 기대 상태와 다른 경우.
      * @note 상태를 검사할 뿐 실제 부착·분리나 Planning Scene 변경은 수행하지 않는다.
      */
-    void requireAttachment(bool value)
+    void requireGazeboAttachment(AttachmentState expected)
     {
+        const bool value = expected == AttachmentState::Attached;
         std::lock_guard<std::mutex> lock(mutex_);
         if (!fresh(attached_received_) || attached_.value_or(!value) != value)
         {
@@ -865,13 +880,14 @@ private:
     }
     /**
      * @brief Gazebo에 공 부착 또는 분리를 요청하고 실제 관측으로 완료를 확인한다.
-     * @param attach true이면 부착 서비스, false이면 분리 서비스를 호출한다.
+     * @param requested Attached이면 부착 서비스, Detached이면 분리 서비스를 호출한다.
      * @details 서비스 성공 후 최신 부착 관측이 요청 상태와 일치할 때까지 최대 3초 기다린다.
      *          MoveIt Planning Scene 동기화는 수행하지 않는다.
      * @throws std::runtime_error 서비스 호출·요청이 실패하거나 확인 대기 중 종료 또는 시간 초과가 발생한 경우.
      */
-    void trigger(bool attach)
+    void setGazeboAttachment(AttachmentState requested)
     {
+        const bool attach = requested == AttachmentState::Attached;
         auto client = attach ? attach_ : detach_;
         auto response = call<std_srvs::srv::Trigger>(client, std::make_shared<std_srvs::srv::Trigger::Request>());
         if (!response->success)
@@ -1135,7 +1151,7 @@ private:
     /**
      * @brief 그리퍼를 열고 공을 잡기 직전의 자세까지 이동하는 MTC Task.
      * @verbatim
-     * Task 생성 전: touchAllowed(true)로 손-공 접촉을 Planning Scene에서 허용
+     * Task 생성 전: setHandBallCollisionAllowed(true)로 손-공 접촉을 Planning Scene에서 허용
      *
      * ↕ measured current scene       [FixedState: 현재 Planning Scene]
      * ↓ open fingers                 [MoveTo: 그리퍼 관절 → {1.18, 1.18}]
@@ -1151,7 +1167,7 @@ private:
      */
     void approach()
     {
-        touchAllowed(true);
+        setHandBallCollisionAllowed(true);
         mtc::Task task;
         configureTask(task, "stage5 approach");
         addJointMove(task, "open fingers", "gripper", FINGERS, {1.18, 1.18});
@@ -1163,7 +1179,7 @@ private:
     /**
      * @brief 접촉할 때까지 그리퍼를 닫고 Gazebo에서 공을 손에 부착한다.
      * @details MoveGroup Action으로 닫기를 실행하고 최신 접촉을 감지하면 진행 중인 goal을 취소한다.
-     *          최종 Action 결과와 손가락 개방량을 검사한 뒤 trigger(true)로 부착을 요청·확인한다.
+     *          최종 Action 결과와 손가락 개방량을 검사한 뒤 setGazeboAttachment(AttachmentState::Attached)로 부착을 요청·확인한다.
      *          실패 시 진행 중인 goal의 취소를 시도하며, MoveIt 장면의 부착은 후속 상태에서 처리한다.
      * @throws std::runtime_error goal 거부, 접촉 확인 실패, 취소·실행 결과 이상,
      *                           관절 상태·개방량 이상 또는 Gazebo 부착 확인 실패 시.
@@ -1249,7 +1265,7 @@ private:
             }
             // Gazebo requires recent contact: request attachment immediately after close termination.
             // 6단계: Gazebo 부착을 요청하고 실제 부착 상태가 확인될 때까지 기다린다.
-            trigger(true);
+            setGazeboAttachment(AttachmentState::Attached);
         }
         catch (...)
         {
@@ -1289,7 +1305,7 @@ private:
      */
     void transport()
     {
-        requireAttachment(true);
+        requireGazeboAttachment(AttachmentState::Attached);
         // Task 1: stage5 lift
         mtc::Task lift;
         configureTask(lift, "stage5 lift");
@@ -1318,7 +1334,7 @@ private:
         lift_stage->setDirection(direction);
         lift.add(std::move(lift_stage));
         executeTask(lift);
-        requireAttachment(true);
+        requireGazeboAttachment(AttachmentState::Attached);
         // Keep the measured ball under the intended basket release XY despite hand-relative offset.
         // Task 2: stage5 transport
         mtc::Task model;
@@ -1338,7 +1354,7 @@ private:
         auto *start = configureTask(carry, "stage5 transport");
         addPoseMove(carry, "above basket", target, start);
         executeTask(carry);
-        requireAttachment(true);
+        requireGazeboAttachment(AttachmentState::Attached);
     }
     /**
      * @brief 그리퍼를 연 뒤 Gazebo와 MoveIt에서 공을 분리한다.
@@ -1348,20 +1364,20 @@ private:
      * ↕ measured current scene       [FixedState: 현재 Planning Scene]
      * ↓ open fingers                 [MoveTo: 그리퍼 관절 → {1.18, 1.18}]
      *
-     * executeTask(task) 완료 → trigger(false) → syncScene(false)
+     * executeTask(task) 완료 → setGazeboAttachment(AttachmentState::Detached) → syncScene(SceneUpdate::Detach)
      * @endverbatim
      * Gazebo 분리 요청·확인과 Planning Scene 분리는 MTC Stage가 아니라 Task 실행 후 처리다.
      * 공이 바구니 안에서 안정됐는지는 이후 VERIFY_PLACE 상태에서 확인한다.
      */
     void release()
     {
-        requireAttachment(true);
+        requireGazeboAttachment(AttachmentState::Attached);
         mtc::Task task;
         configureTask(task, "stage5 open for release");
         addJointMove(task, "open fingers", "gripper", FINGERS, {1.18, 1.18});
         executeTask(task);
-        trigger(false);
-        syncScene(false);
+        setGazeboAttachment(AttachmentState::Detached);
+        syncScene(SceneUpdate::Detach);
     }
     /**
      * @brief 놓기 성공 후 손을 후퇴시키고 시작 관절 자세로 복귀하는 Task.
@@ -1372,7 +1388,7 @@ private:
      *     ↕ retreat pose             [GeneratePose: retreat_]
      * ↓ return start                 [MoveTo: 팔 관절 → start_]
      * @endverbatim
-     * executeTask(task)로 계획·실행한 뒤 touchAllowed(false)로 손-공 접촉 허용을 해제한다.
+     * executeTask(task)로 계획·실행한 뒤 setHandBallCollisionAllowed(false)로 손-공 접촉 허용을 해제한다.
      * 이 작업이 정상 반환하면 다음 tick()에서 SUCCEEDED_WAITING으로 전환한다.
      * @note 작업 스레드에서 호출하며 실패 예외는 tick()의 공통 처리로 전달한다.
      */
@@ -1383,7 +1399,7 @@ private:
         addPoseMove(task, "retreat", retreat_, start);
         addJointMove(task, "return start", "ur5", ARM, start_);
         executeTask(task);
-        touchAllowed(false);
+        setHandBallCollisionAllowed(false);
     }
     /**
      * @brief 현재 실행 상태를 로그에 사용할 이름으로 변환한다.
@@ -1579,15 +1595,15 @@ private:
                 break;
                 case State::CLOSE: closeContact();
                 break;
-                case State::ATTACH: requireAttachment(true);
-                syncScene(true);
+                case State::ATTACH: requireGazeboAttachment(AttachmentState::Attached);
+                syncScene(SceneUpdate::Attach);
                 break;
                 case State::TRANSPORT: transport();
                 break;
                 case State::RELEASE: release();
                 break;
-                case State::REFRESH_SCENE: requireAttachment(false);
-                syncScene(false, true);
+                case State::REFRESH_SCENE: requireGazeboAttachment(AttachmentState::Detached);
+                syncScene(SceneUpdate::RefreshWorld);
                 break;
                 case State::RETURN: returnToStart();
                 break;

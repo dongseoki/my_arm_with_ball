@@ -52,12 +52,13 @@
   - 정리 결과: [Pick & Place 검증 범위 정리](pick_and_place_검증범위_정리.md).
   - [x] 기존 점검 문서로 보존 동작·검증 방법 및 변경 전 기준 확보가 충분하다는 사용자 판단을 반영한다.
   - 완료 근거는 기존 절차와 기준의 수용이다. 이번 단계에서 빌드·테스트·시뮬레이션을 새로 실행하거나 새 결과를 확보한 것은 아니다. 선택적 예외 시험은 미실행 상태로 유지한다.
-- [ ] 3단계: 한 파일 안의 가독성을 개선한다. `readiness()` 메서드 분리 포함.
+- [x] 3단계: 한 파일 안의 가독성을 개선한다. 합의한 구현 항목 완료 (2026-11-15), 기능 검증은 미실행.
   - [x] `readiness()`를 다섯 확인 메서드로 분리하고 application 패키지 빌드 성공 (2026-11-15).
   - [x] RETURN 작업을 `returnToStart()`로 추출 (2026-11-15). 컴파일 확인 결과는 아래 기록.
   - [x] 생성자를 `initializeParameters()`·`createSubscriptions()`·`createClients()`로 분리 (2026-11-15). 컴파일 확인 결과는 아래 기록.
   - [x] `tick()`의 작업 결과·상태 전환·비동기 작업 시작 책임 분리 및 컴파일 확인 (2026-11-15).
-  - 사용자 요청으로 테스트·시뮬레이션은 미실행. 모호한 호출 표현 개선은 미완료.
+  - [x] 모호한 호출 표현 다섯 가지를 이름·enum 인자로 명확히 한다 (2026-11-15).
+  - 사용자 요청으로 테스트·시뮬레이션은 미실행. tick 관련 후속 질문은 별도 검토하며 이번 구현에는 포함하지 않는다.
 - [ ] 4단계: 책임별로 파일을 분리하고 단계마다 검증한다.
 
 ### 1단계: 작업 흐름을 자기 말로 정리한다
@@ -131,10 +132,32 @@
 - [x] 생성자의 파라미터 읽기·검증과 ROS 인터페이스 생성을 이름 있는 함수로 구분한다 (2026-11-15).
 - [x] `tick()`의 작업 결과 처리·상태 전환·다음 작업 실행 분배를 구분한다 (2026-11-15).
   - `waitForStablePlacement()`는 별도 책임으로 유지하고 잠금 범위와 비동기 처리 방식을 함께 바꾸지 않는다.
-- [ ] `trigger(bool)`, `syncScene(bool, bool)`처럼 호출만 보면 뜻이 모호한 인터페이스의 개선을 검토한다.
-  - 실제 동작 변경 없이 호출부에서 부착·분리·장면 갱신 목적이 드러나는 이름이나 인자 표현을 검토한다.
+- [x] `trigger(bool)`, `syncScene(bool, bool)` 등 모호한 인터페이스 다섯 가지를 이름·enum 인자로 개선한다 (2026-11-15).
+  - Gazebo 요청·관측 검사, MoveIt 부착·분리·world 갱신, 손-공 충돌 규칙의 목적을 호출부에 드러낸다.
 
 각 항목은 작은 변경 단위로 진행한다. 사용자는 함수 이름과 상위 흐름이 이전보다 이해하기 쉬운지 판단하고, 구현 측에서는 실행 순서·잠금·예외 처리의 보존을 확인한다. 파일 분리는 아직 하지 않는다.
+
+#### 모호한 호출 표현 개선 계획 (2026-11-15)
+
+- 범위: 같은 C++ 파일의 다섯 인터페이스와 호출부·관련 주석. 파일 분리와 tick 제어 흐름 변경은 제외한다.
+- `AttachmentState { Attached, Detached }`와 `SceneUpdate { Attach, Detach, RefreshWorld }`로 호출 목적을 명시한다.
+- `trigger` → `setGazeboAttachment`, `requireAttachment` → `requireGazeboAttachment`, `touchAllowed` → `setHandBallCollisionAllowed`; `syncScene`과 `verifyScene`은 enum 인자를 받는다.
+- 기존 부착·분리·world 갱신 분기, 관측 누락 시 불일치 판정, 서비스·타임아웃·잠금·예외·충돌 규칙을 보존한다. 공-바닥 충돌 상시 허용도 유지한다. 새 실패 대체 경로는 추가하지 않는다.
+- 검증: 사용자 합의에 따라 회귀 테스트·시뮬레이션은 실행하지 않고 패키지 컴파일과 별도 정적 리뷰만 확인한다. 컴파일 성공은 기능 검증이 아니다.
+
+#### 모호한 호출 표현 개선 결과
+
+| 기존 | 변경 |
+|---|---|
+| `trigger(true/false)` | `setGazeboAttachment(AttachmentState::Attached/Detached)` |
+| `syncScene(true)`, `syncScene(false)`, `syncScene(false, true)` | `syncScene(SceneUpdate::Attach/Detach/RefreshWorld)` |
+| `requireAttachment(true/false)` | `requireGazeboAttachment(AttachmentState::Attached/Detached)` |
+| `touchAllowed(true/false)` | `setHandBallCollisionAllowed(true/false)` |
+| `verifyScene(bool, expected)` | `verifyScene(AttachmentState, expected)` |
+
+호출부와 Doxygen을 함께 갱신했다. enum은 호출 목적을 표현하고 함수 내부에서는 기존 bool 조건과 같은 의미로 판정한다. Detach만 기존 부착 정보를 제거하고 RefreshWorld는 world 물체만 갱신한다. 기존 서비스 선택·관측 불일치 판정·타임아웃·잠금·예외 및 공-바닥 상시 충돌 허용 규칙은 유지한다. tick 제어 흐름과 파일 구성은 변경하지 않는다.
+
+**컴파일 확인 (2026-11-15):** ROS Jazzy와 기존 workspace 환경을 source하고 `colcon build --symlink-install --packages-select my_arm_with_ball_application` 실행 성공. 종료 코드 0, `1 package finished [24.2s]`. 기존 underlay 중복 경고 외 컴파일 오류는 없었다. 별도 정적 리뷰에서 기존 동작의 변경을 발견하지 않았으며 `git diff --check`도 통과했다. 테스트·lint·시뮬레이션은 실행하지 않았다. 합의한 3단계 구현 항목은 완료했지만 런타임 동작 검증을 완료했다는 의미는 아니다.
 
 #### tick() 책임 분리 결과
 
