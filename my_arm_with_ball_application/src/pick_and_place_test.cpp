@@ -64,6 +64,59 @@ public:
     PickAndPlace() : Node("pick_and_place_test", rclcpp::NodeOptions()
                                                      .automatically_declare_parameters_from_overrides(true))
     {
+        initializeParameters();
+        createSubscriptions();
+        createClients();
+        started_ = Clock::now();
+        timer_ = create_wall_timer(100ms, std::bind(&PickAndPlace::tick, this));
+        RCLCPP_INFO(get_logger(), "WAIT_READY: waiting for controllers, MoveIt and fresh simulation state");
+    }
+
+    /**
+     * @brief 종료를 알리고 진행 중인 MTC 계획 중단을 요청한 뒤 비동기 작업 종료를 기다린다.
+     * @details 클라이언트와 관측 데이터가 파괴되기 전에 work_의 작업이 끝나도록 한다.
+     */
+    ~PickAndPlace() override
+    {
+        stopping_ = true;
+        {
+            std::lock_guard<std::mutex> lock(planning_mutex_);
+            if (planning_task_)
+            {
+                planning_task_->preempt();
+            }
+        }
+        // Worker awaits check stopping every 50ms; MTC plans have an explicit
+        // timeout and receive preempt above. Join before destroying clients/data.
+        if (work_.valid())
+        {
+            work_.wait();
+        } // 시작한 작업의 결과를 아직 가져오지 않았는지 확인한다.
+    }
+
+private:
+    /// @brief 자동 1회 Pick-and-Place의 실행 상태. tick()이 작업 결과에 따라 전환한다.
+    enum class State
+    {
+        WAIT_READY,        ///< 로봇 제어기, MoveIt, 센서 정보와 작업 장면이 준비되기를 기다리는 상태를 의미한다.
+        APPROACH,          ///< 그리퍼를 열고 준비 자세를 거쳐 공을 잡을 위치로 이동하는 상태를 의미한다.
+        CLOSE,             ///< 공에 닿을 때까지 그리퍼를 닫고, 잡은 공을 Gazebo에서 손에 부착하는 상태를 의미한다.
+        ATTACH,            ///< Gazebo에서 잡은 공을 MoveIt도 손에 붙은 물체로 인식하도록 반영하고 확인하는 상태를 의미한다.
+        TRANSPORT,         ///< 잡은 공을 위로 들어 올린 뒤 바구니 위까지 옮기는 상태를 의미한다.
+        RELEASE,           ///< 그리퍼를 열어 공을 손에서 분리하고, MoveIt에도 분리 결과를 반영하는 상태를 의미한다.
+        VERIFY_PLACE,      ///< 놓은 공이 바구니 안에 있고 일정 시간 거의 움직이지 않는지 확인하며 기다리는 상태를 의미한다.
+        REFRESH_SCENE,     ///< 안정된 공의 최신 위치를 MoveIt 작업 장면에 다시 반영하는 상태를 의미한다.
+        RETURN,            ///< 공을 놓은 위치에서 물러나 저장된 시작 관절 자세로 돌아가는 상태를 의미한다.
+        SUCCEEDED_WAITING, ///< 작업을 성공적으로 마친 뒤 재실행 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
+        FAILED_WAITING     ///< 작업 실패 원인을 기록한 뒤 자동 재시도나 복귀 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
+    };
+    /**
+     * @brief 파라미터를 읽고 검증한 뒤 놓기 안정성 판정 객체를 준비한다.
+     * @details 기존 기본값과 검증 순서를 유지하며 ROS 통신 인터페이스는 생성하지 않는다.
+     * @throws std::invalid_argument 목표값이나 시간·속도·범위 설정이 유효하지 않은 경우.
+     */
+    void initializeParameters()
+    {
         ready_timeout_ = parameter("ready_timeout", 120.0);
         operation_timeout_ = parameter("operation_timeout", 90.0);
         max_age_ = parameter("state_max_age", 2.0);
@@ -118,6 +171,13 @@ public:
         std::array<double, 6> limits;
         std::copy(bounds.begin(), bounds.end(), limits.begin());
         stability_ = std::make_unique<pick_place::PlaceStability>(limits, stable_speed_, stable_duration_);
+    }
+    /**
+     * @brief 관절·접촉·부착 상태와 공 pose의 구독 및 관측 콜백을 등록한다.
+     * @note initializeParameters()로 안정성 판정 객체를 준비한 뒤 호출한다.
+     */
+    void createSubscriptions()
+    {
         joint_sub_ = create_subscription<sensor_msgs::msg::JointState>("/joint_states", 10,
             [this](sensor_msgs::msg::JointState::ConstSharedPtr msg) {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -156,6 +216,13 @@ public:
                         msg->pose.position.z}, rclcpp::Time(msg->header.stamp).seconds());
                 }
             });
+    }
+    /**
+     * @brief 컨트롤러·Planning Scene·Gazebo 서비스와 동작 Action 클라이언트를 생성한다.
+     * @note 클라이언트 생성만 수행하며 서버 준비 확인이나 작업 실행은 하지 않는다.
+     */
+    void createClients()
+    {
         controllers_ = create_client<controller_manager_msgs::srv::ListControllers>("/controller_manager/list_controllers");
         get_scene_ = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
         apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
@@ -165,49 +232,7 @@ public:
         arm_controller_ = rclcpp_action::create_client<FollowTrajectory>(this, "/arm_trajectory_controller/follow_joint_trajectory");
         gripper_controller_ = rclcpp_action::create_client<FollowTrajectory>(this, "/gripper_trajectory_controller/follow_joint_trajectory");
         execute_ = rclcpp_action::create_client<ExecuteTask>(this, "/execute_task_solution");
-        started_ = Clock::now();
-        timer_ = create_wall_timer(100ms, std::bind(&PickAndPlace::tick, this));
-        RCLCPP_INFO(get_logger(), "WAIT_READY: waiting for controllers, MoveIt and fresh simulation state");
     }
-
-    /**
-     * @brief 종료를 알리고 진행 중인 MTC 계획 중단을 요청한 뒤 비동기 작업 종료를 기다린다.
-     * @details 클라이언트와 관측 데이터가 파괴되기 전에 work_의 작업이 끝나도록 한다.
-     */
-    ~PickAndPlace() override
-    {
-        stopping_ = true;
-        {
-            std::lock_guard<std::mutex> lock(planning_mutex_);
-            if (planning_task_)
-            {
-                planning_task_->preempt();
-            }
-        }
-        // Worker awaits check stopping every 50ms; MTC plans have an explicit
-        // timeout and receive preempt above. Join before destroying clients/data.
-        if (work_.valid())
-        {
-            work_.wait();
-        } // 시작한 작업의 결과를 아직 가져오지 않았는지 확인한다.
-    }
-
-private:
-    /// @brief 자동 1회 Pick-and-Place의 실행 상태. tick()이 작업 결과에 따라 전환한다.
-    enum class State
-    {
-        WAIT_READY,        ///< 로봇 제어기, MoveIt, 센서 정보와 작업 장면이 준비되기를 기다리는 상태를 의미한다.
-        APPROACH,          ///< 그리퍼를 열고 준비 자세를 거쳐 공을 잡을 위치로 이동하는 상태를 의미한다.
-        CLOSE,             ///< 공에 닿을 때까지 그리퍼를 닫고, 잡은 공을 Gazebo에서 손에 부착하는 상태를 의미한다.
-        ATTACH,            ///< Gazebo에서 잡은 공을 MoveIt도 손에 붙은 물체로 인식하도록 반영하고 확인하는 상태를 의미한다.
-        TRANSPORT,         ///< 잡은 공을 위로 들어 올린 뒤 바구니 위까지 옮기는 상태를 의미한다.
-        RELEASE,           ///< 그리퍼를 열어 공을 손에서 분리하고, MoveIt에도 분리 결과를 반영하는 상태를 의미한다.
-        VERIFY_PLACE,      ///< 놓은 공이 바구니 안에 있고 일정 시간 거의 움직이지 않는지 확인하며 기다리는 상태를 의미한다.
-        REFRESH_SCENE,     ///< 안정된 공의 최신 위치를 MoveIt 작업 장면에 다시 반영하는 상태를 의미한다.
-        RETURN,            ///< 공을 놓은 위치에서 물러나 저장된 시작 관절 자세로 돌아가는 상태를 의미한다.
-        SUCCEEDED_WAITING, ///< 작업을 성공적으로 마친 뒤 재실행 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
-        FAILED_WAITING     ///< 작업 실패 원인을 기록한 뒤 자동 재시도나 복귀 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
-    };
     /**
      * @brief ROS 파라미터를 읽고, 아직 선언되지 않았다면 기본값으로 선언한다.
      * @tparam T 파라미터 값의 자료형.
