@@ -1471,105 +1471,102 @@ private:
         return true;
     }
     /**
-     * @brief 타이머마다 비동기 작업 결과와 관측 상태를 확인하고 다음 작업을 시작한다.
-     * @details 완료된 Future의 결과에 따라 상태를 전환하고, 준비·놓기 확인의 시간 초과를 처리한다.
-     *          오래 걸리는 계획·실행·서비스 대기는 work_에서 실행하며 이 콜백은 완료를 기다리지 않는다.
-     *          성공·실패 대기 상태에서는 새 작업을 시작하지 않는다.
+     * @brief 진행 중 작업의 완료 결과를 처리하고 이번 tick의 진행 가능 여부를 반환한다.
+     * @return 작업이 없거나 결과 처리 후 계속할 수 있으면 true.
+     *         작업 진행 중, 준비 미완료 또는 실패 처리 후에는 false.
+     * @note 반환값은 작업의 성공 여부가 아니다. tick()이 mutex_를 잠근 상태에서 호출한다.
      */
-    void tick()
+    bool processWorkResult()
     {
-        // All shared observation/state accesses use this lock. Blocking calls only run in work_.
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (state_ == State::SUCCEEDED_WAITING || state_ == State::FAILED_WAITING)
+        if (!work_.valid())
         {
-            return;
+            return true;
         }
-        if (work_.valid())
-        { // 시작한 작업의 결과를 아직 가져오지 않았는지 확인한다.
-            if (work_.wait_for(0ms) != std::future_status::ready)
+        if (work_.wait_for(0ms) != std::future_status::ready)
+        {
+            return false;
+        }
+        try
+        {
+            const auto reason = work_.get();
+            if (state_ == State::WAIT_READY)
             {
-                return;
-            }
-            try
-            {
-                const auto reason = work_.get();
-                if (state_ == State::WAIT_READY)
+                waiting_reason_ = reason;
+                if (!reason.empty())
                 {
-                    waiting_reason_ = reason;
-                    if (!reason.empty())
+                    if (secondsSince(started_) > ready_timeout_)
                     {
-                        if (secondsSince(started_) > ready_timeout_)
-                        {
-                            fail("Preparation timed out: " + reason);
-                        }
-                        return;
+                        fail("Preparation timed out: " + reason);
                     }
-                    if (start_.empty())
-                    {
-                        for (const auto &name : ARM)
-                        {
-                            start_.push_back(joints_.at(name));
-                        }
-                    }
-                    RCLCPP_INFO(get_logger(), "STAGE5 starting single automatic task");
-                    advance(State::APPROACH);
+                    return false;
                 }
-                else
+                if (start_.empty())
                 {
-                    switch (state_)
+                    for (const auto &name : ARM)
                     {
-                    case State::APPROACH:
-                        advance(State::CLOSE);
-                        break;
-                    case State::CLOSE:
-                        advance(State::ATTACH);
-                        break;
-                    case State::ATTACH:
-                        advance(State::TRANSPORT);
-                        break;
-                    case State::TRANSPORT:
-                        advance(State::RELEASE);
-                        break;
-                    case State::RELEASE:
-                        stability_->reset();
-                        stable_ = false;
-                        advance(State::VERIFY_PLACE);
-                        break;
-                    case State::REFRESH_SCENE:
-                        advance(State::RETURN);
-                        break;
-                    case State::RETURN:
-                        advance(State::SUCCEEDED_WAITING);
-                        RCLCPP_INFO(get_logger(), "STAGE5 PICK AND PLACE PASSED; waiting");
-                        break;
-                    default:
-                        break;
+                        start_.push_back(joints_.at(name));
                     }
                 }
+                RCLCPP_INFO(get_logger(), "STAGE5 starting single automatic task");
+                advance(State::APPROACH);
             }
-            catch (const std::exception &ex)
+            else
             {
-                fail(ex.what());
-                return;
+                advanceAfterWork();
             }
         }
-        if (state_ == State::WAIT_READY && secondsSince(started_) > ready_timeout_)
+        catch (const std::exception &ex)
         {
-            fail("Preparation timed out: " + waiting_reason_);
-            return;
+            fail(ex.what());
+            return false;
         }
-        if (state_ == State::VERIFY_PLACE)
+        return true;
+    }
+    /**
+     * @brief 준비 확인 이외의 작업이 정상 완료됐을 때 다음 상태로 전환한다.
+     * @details RELEASE 후 안정성 누적 초기화와 RETURN 후 성공 로그도 처리한다.
+     * @note tick()의 잠금 상태에서 호출하며 다음 작업을 직접 실행하지 않는다.
+     */
+    void advanceAfterWork()
+    {
+        switch (state_)
         {
-            if (waitForStablePlacement())
-            {
-                return;
-            }
+        case State::APPROACH:
+            advance(State::CLOSE);
+            break;
+        case State::CLOSE:
+            advance(State::ATTACH);
+            break;
+        case State::ATTACH:
+            advance(State::TRANSPORT);
+            break;
+        case State::TRANSPORT:
+            advance(State::RELEASE);
+            break;
+        case State::RELEASE:
+            stability_->reset();
+            stable_ = false;
+            advance(State::VERIFY_PLACE);
+            break;
+        case State::REFRESH_SCENE:
+            advance(State::RETURN);
+            break;
+        case State::RETURN:
+            advance(State::SUCCEEDED_WAITING);
+            RCLCPP_INFO(get_logger(), "STAGE5 PICK AND PLACE PASSED; waiting");
+            break;
+        default:
+            break;
         }
-        const State selected = state_;
-        if (selected == State::SUCCEEDED_WAITING)
-        {
-            return;
-        }
+    }
+    /**
+     * @brief 선택한 상태의 작업을 별도 스레드에서 시작하고 Future를 저장한다.
+     * @param selected 이번에 실행할 상태. 작업 스레드에는 값으로 전달한다.
+     * @details 준비 확인 예외는 이유 문자열로 반환하고 다른 작업 예외는 Future로 전달한다.
+     * @note 작업 시작은 tick()의 잠금 상태에서 수행하지만 작업 완료를 기다리지 않는다.
+     */
+    void startStateWork(State selected)
+    {
         work_ = std::async(std::launch::async, [this, selected]() -> std::string
                            {
             if (selected == State::WAIT_READY) {
@@ -1597,6 +1594,43 @@ private:
                 default: break;
             }
             return ""; });
+    }
+    /**
+     * @brief 타이머마다 비동기 작업 결과와 관측 상태를 확인하고 다음 작업을 시작한다.
+     * @details 완료된 Future의 결과에 따라 상태를 전환하고, 준비·놓기 확인의 시간 초과를 처리한다.
+     *          오래 걸리는 계획·실행·서비스 대기는 work_에서 실행하며 이 콜백은 완료를 기다리지 않는다.
+     *          성공·실패 대기 상태에서는 새 작업을 시작하지 않는다.
+     */
+    void tick()
+    {
+        // All shared observation/state accesses use this lock. Blocking calls only run in work_.
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ == State::SUCCEEDED_WAITING || state_ == State::FAILED_WAITING)
+        {
+            return;
+        }
+        if (!processWorkResult())
+        {
+            return;
+        }
+        if (state_ == State::WAIT_READY && secondsSince(started_) > ready_timeout_)
+        {
+            fail("Preparation timed out: " + waiting_reason_);
+            return;
+        }
+        if (state_ == State::VERIFY_PLACE)
+        {
+            if (waitForStablePlacement())
+            {
+                return;
+            }
+        }
+        const State selected = state_;
+        if (selected == State::SUCCEEDED_WAITING)
+        {
+            return;
+        }
+        startStateWork(selected);
     }
 
     std::mutex mutex_, planning_mutex_;
