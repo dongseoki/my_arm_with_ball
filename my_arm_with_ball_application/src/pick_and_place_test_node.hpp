@@ -1,0 +1,8 @@
+#ifndef MY_ARM_WITH_BALL_APPLICATION_PICK_AND_PLACE_TEST_NODE_HPP_
+#define MY_ARM_WITH_BALL_APPLICATION_PICK_AND_PLACE_TEST_NODE_HPP_
+
+#include <rclcpp/rclcpp.hpp>
+
+rclcpp::Node::SharedPtr createPickAndPlaceNode();
+
+#endif  // MY_ARM_WITH_BALL_APPLICATION_PICK_AND_PLACE_TEST_NODE_HPP_

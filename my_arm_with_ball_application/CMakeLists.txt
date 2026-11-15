@@ -17,7 +17,10 @@ find_package(shape_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
-add_executable(pick_and_place_test src/pick_and_place_test.cpp)
+add_executable(pick_and_place_test
+  src/pick_and_place_test_main.cpp
+  src/pick_and_place_test.cpp
+)
 target_compile_features(pick_and_place_test PRIVATE cxx_std_17)
 ament_target_dependencies(pick_and_place_test
   rclcpp rclcpp_action action_msgs controller_manager_msgs control_msgs

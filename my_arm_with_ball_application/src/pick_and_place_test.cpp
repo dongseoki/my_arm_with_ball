@@ -38,6 +38,7 @@
 #include <moveit/task_constructor/solvers/pipeline_planner.h>
 #include <moveit/task_constructor/solvers/joint_interpolation.h>
 #include <shape_msgs/msg/solid_primitive.hpp>
+#include "pick_and_place_test_node.hpp"
 #include "place_stability.hpp"
 
 using namespace std::chrono_literals;
