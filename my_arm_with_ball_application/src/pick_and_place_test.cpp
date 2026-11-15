@@ -1339,6 +1339,28 @@ private:
         syncScene(false);
     }
     /**
+     * @brief 놓기 성공 후 손을 후퇴시키고 시작 관절 자세로 복귀하는 Task.
+     * @verbatim
+     * ↕ measured current scene       [FixedState: 최종 공 위치가 반영된 장면]
+     * ‖ connect to retreat           [Connect: 현재 자세에서 후퇴 IK 자세까지 경로 생성]
+     * ↕ retreat IK                   [ComputeIK: retreat_ 목표의 관절 자세 계산]
+     *     ↕ retreat pose             [GeneratePose: retreat_]
+     * ↓ return start                 [MoveTo: 팔 관절 → start_]
+     * @endverbatim
+     * executeTask(task)로 계획·실행한 뒤 touchAllowed(false)로 손-공 접촉 허용을 해제한다.
+     * 이 작업이 정상 반환하면 다음 tick()에서 SUCCEEDED_WAITING으로 전환한다.
+     * @note 작업 스레드에서 호출하며 실패 예외는 tick()의 공통 처리로 전달한다.
+     */
+    void returnToStart()
+    {
+        mtc::Task task;
+        auto *start = configureTask(task, "stage5 return");
+        addPoseMove(task, "retreat", retreat_, start);
+        addJointMove(task, "return start", "ur5", ARM, start_);
+        executeTask(task);
+        touchAllowed(false);
+    }
+    /**
      * @brief 현재 실행 상태를 로그에 사용할 이름으로 변환한다.
      * @return state_에 대응하는 상태 이름 문자열.
      */
@@ -1545,27 +1567,8 @@ private:
                 case State::REFRESH_SCENE: requireAttachment(false);
                 syncScene(false, true);
                 break;
-                /**
-                 * @brief 놓기 성공 후 손을 후퇴시키고 시작 관절 자세로 복귀하는 Task.
-                 * @verbatim
-                 * ↕ measured current scene       [FixedState: 최종 공 위치가 반영된 장면]
-                 * ‖ connect to retreat           [Connect: 현재 자세에서 후퇴 IK 자세까지 경로 생성]
-                 * ↕ retreat IK                   [ComputeIK: retreat_ 목표의 관절 자세 계산]
-                 *     ↕ retreat pose             [GeneratePose: retreat_]
-                 * ↓ return start                 [MoveTo: 팔 관절 → start_]
-                 * @endverbatim
-                 * executeTask(task)로 계획·실행한 뒤 touchAllowed(false)로 손-공 접촉 허용을 해제한다.
-                 * 이 작업이 정상 반환하면 다음 tick()에서 SUCCEEDED_WAITING으로 전환한다.
-                 */
-                case State::RETURN: {
-                    mtc::Task task;
-                    auto * start = configureTask(task, "stage5 return");
-                    addPoseMove(task, "retreat", retreat_, start);
-                    addJointMove(task, "return start", "ur5", ARM, start_);
-                    executeTask(task);
-                    touchAllowed(false);
-                    break;
-                }
+                case State::RETURN: returnToStart();
+                break;
                 default: break;
             }
             return ""; });
