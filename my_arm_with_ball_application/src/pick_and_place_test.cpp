@@ -1086,7 +1086,8 @@ private:
                              const std::vector<std::string> &names, const std::vector<double> &values)
     {
         auto planner = std::make_shared<mtc::solvers::PipelinePlanner>(shared_from_this());
-        planner->setPlannerId("ompl", "RRTConnectkConfigDefault");
+        // 팔(ur5)은 RRT*, 그리퍼는 기존 RRTConnect로 계획한다.
+        planner->setPlannerId("ompl", group == "ur5" ? "RRTstarkConfigDefault" : "RRTConnectkConfigDefault");
         planner->setMaxVelocityScalingFactor(velocity_);
         planner->setMaxAccelerationScalingFactor(acceleration_);
         auto stage = std::make_unique<mtc::stages::MoveTo>(label, planner);
@@ -1116,8 +1117,8 @@ private:
     {
         auto planner = std::make_shared<mtc::solvers::PipelinePlanner>(shared_from_this());
         // 현재 노드를 사용하는 MoveIt 경로 계획기를 생성한다.
-        planner->setPlannerId("ompl", "RRTConnectkConfigDefault");
-        // OMPL의 RRTConnect 경로 계획 알고리즘을 선택한다.
+        planner->setPlannerId("ompl", "RRTstarkConfigDefault");
+        // 팔 pose 이동에는 OMPL의 RRT* 경로 계획 알고리즘을 선택한다.
         planner->setMaxVelocityScalingFactor(velocity_);
         // 관절 최대 속도의 사용 비율을 설정한다.
         planner->setMaxAccelerationScalingFactor(acceleration_);
@@ -1683,27 +1684,10 @@ private:
 };
 
 /**
- * @brief ROS를 초기화하고 Pick-and-Place 노드를 MultiThreadedExecutor로 실행한다.
- * @param argc 명령행 인자 개수.
- * @param argv ROS 인자를 포함한 명령행 인자 배열.
- * @return 정상 종료 시 0, 노드 생성 또는 실행 중 표준 예외가 발생하면 1.
+ * @brief Pick-and-Place 노드를 생성한다.
+ * @return 생성된 노드.
  */
-int main(int argc, char **argv)
+rclcpp::Node::SharedPtr createPickAndPlaceNode()
 {
-    rclcpp::init(argc, argv);
-    try
-    {
-        auto node = std::make_shared<PickAndPlace>();
-        rclcpp::executors::MultiThreadedExecutor executor;
-        executor.add_node(node);
-        executor.spin();
-    }
-    catch (const std::exception &ex)
-    {
-        RCLCPP_ERROR(rclcpp::get_logger("pick_and_place_test"), "%s", ex.what());
-        rclcpp::shutdown();
-        return 1;
-    }
-    rclcpp::shutdown();
-    return 0;
+    return std::make_shared<PickAndPlace>();
 }

@@ -13,9 +13,15 @@ planner_configs:
   RRTConnectkConfigDefault:
     type: geometric::RRTConnect
     range: 0.0
+  RRTstarkConfigDefault:
+    type: geometric::RRTstar
+    optimization_objective: PathLengthOptimizationObjective
+    range: 0.0
+    goal_bias: 0.05
+    delay_collision_checking: 1
 ur5:
   default_planner_config: RRTConnectkConfigDefault
-  planner_configs: [RRTConnectkConfigDefault]
+  planner_configs: [RRTConnectkConfigDefault, RRTstarkConfigDefault]
   longest_valid_segment_fraction: 0.0005
 gripper:
   default_planner_config: RRTConnectkConfigDefault
