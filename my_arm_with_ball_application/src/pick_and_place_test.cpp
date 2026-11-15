@@ -42,13 +42,13 @@
 #include "place_stability.hpp"
 #include "planning_scene_manager.hpp"
 #include "mtc_task_executor.hpp"
+#include "ros_async_operations.hpp"
 #include "gazebo_manager.hpp"
 
 using namespace std::chrono_literals;
 namespace mtc = moveit::task_constructor;
 using MoveGroup = moveit_msgs::action::MoveGroup;
 using FollowTrajectory = control_msgs::action::FollowJointTrajectory;
-using ExecuteTask = moveit_task_constructor_msgs::action::ExecuteTaskSolution;
 using Clock = std::chrono::steady_clock;
 static const std::vector<std::string> ARM = {
     "shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
@@ -320,122 +320,6 @@ private:
         return pose_;
     }
     /**
-     * @brief Future의 완료를 제한 시간 동안 기다린 뒤 결과를 가져온다.
-     * @tparam Future wait_for()와 get()을 제공하는 비동기 결과 자료형.
-     * @param future 결과를 기다릴 Future.
-     * @param timeout 실제 경과 시간 기준 대기 제한(초).
-     * @param label 시간 초과·종료 예외에 표시할 작업 설명.
-     * @return future.get()으로 얻은 결과.
-     * @throws std::runtime_error 대기 중 종료가 요청되거나 ROS가 종료되거나 제한 시간을 초과한 경우.
-     * @note Future 자체에 저장된 예외도 호출자에게 전달된다. tick()이 아닌 작업 스레드에서 사용한다.
-     */
-    template <class Future>
-    auto await(Future &&future, double timeout, const std::string &label)
-    {
-        const auto begin = Clock::now();
-        while (future.wait_for(50ms) != std::future_status::ready)
-        {
-            if (stopping_ || !rclcpp::ok() || secondsSince(begin) > timeout)
-            {
-                throw std::runtime_error(label + " timeout/shutdown");
-            }
-        }
-        return future.get();
-    }
-    /**
-     * @brief Action goal을 보내고 서버의 승인 또는 거부 응답을 기다린다.
-     * @tparam ClientPtr Action 클라이언트 공유 포인터 자료형.
-     * @tparam Goal 전송할 Action goal 자료형.
-     * @param client goal을 보낼 Action 클라이언트.
-     * @param goal 전송할 작업 목표.
-     * @param timeout goal 응답 대기 제한(초). 작업 실행 완료 제한은 아니다.
-     * @param label 응답 대기와 취소 로그에 표시할 작업 설명.
-     * @return 승인된 goal handle. 거부되면 빈 포인터.
-     * @details 응답 대기가 실패한 뒤 승인된 goal도 취소하도록 응답 콜백과 상태를 공유한다.
-     * @note 전송·대기 중 발생한 예외는 취소 요청 처리 후 호출자에게 전달한다.
-     */
-    template <class ClientPtr, class Goal>
-    auto sendGoal(const ClientPtr &client, const Goal &goal, double timeout, const std::string &label)
-    {
-        using Client = typename std::decay_t<ClientPtr>::element_type;
-        using GoalHandle = typename Client::GoalHandle;
-        struct ResponseState
-        {
-            std::mutex mutex;
-            bool abandoned{false};
-            typename GoalHandle::SharedPtr handle;
-        };
-        auto state = std::make_shared<ResponseState>();
-        typename Client::SendGoalOptions options;
-        options.goal_response_callback = [this, client, state, label](typename GoalHandle::SharedPtr handle)
-        {
-            bool cancel = false;
-            {
-                std::lock_guard<std::mutex> lock(state->mutex);
-                state->handle = handle;
-                cancel = state->abandoned && static_cast<bool>(handle);
-            }
-            if (cancel)
-            {
-                cancelLateGoal(client, handle, label);
-            }
-        };
-        auto future = client->async_send_goal(goal, options);
-        try
-        {
-            return await(future, timeout, label);
-        }
-        catch (...)
-        {
-            typename GoalHandle::SharedPtr handle;
-            {
-                std::lock_guard<std::mutex> lock(state->mutex);
-                state->abandoned = true;
-                handle = state->handle;
-            }
-            if (handle)
-            {
-                cancelLateGoal(client, handle, label);
-            }
-            throw;
-        }
-    }
-    /**
-     * @brief goal 응답 대기가 실패한 뒤 확인된 goal에 비동기 취소를 요청한다.
-     * @tparam ClientPtr Action 클라이언트 공유 포인터 자료형.
-     * @tparam GoalHandlePtr goal handle 공유 포인터 자료형.
-     * @param client 취소와 최종 결과 조회에 사용할 Action 클라이언트.
-     * @param handle 취소할 goal handle.
-     * @param label 로그에 표시할 작업 설명.
-     * @details 취소 요청 수락 여부와 최종 결과를 콜백으로 기록한다. 취소 완료까지 기다리지는 않는다.
-     */
-    template <class ClientPtr, class GoalHandlePtr>
-    void cancelLateGoal(const ClientPtr &client, const GoalHandlePtr &handle, const std::string &label)
-    {
-        const auto logger = get_logger();
-        RCLCPP_ERROR(logger, "%s goal response arrived after timeout; cancelling the late goal", label.c_str());
-        try
-        {
-            client->async_cancel_goal(handle, [logger, label](const auto &response)
-                                      {
-                if (response->goals_canceling.empty()) {
-                    RCLCPP_ERROR(logger, "%s late-goal cancel request was not accepted", label.c_str());
-                } });
-            client->async_get_result(handle, [logger, label](const auto &result)
-                                     {
-                if (result.code == rclcpp_action::ResultCode::CANCELED) {
-                    RCLCPP_WARN(logger, "%s late goal cancellation confirmed", label.c_str());
-                } else {
-                    RCLCPP_ERROR(logger, "%s late goal terminal result was not cancellation (code=%d)",
-                        label.c_str(), static_cast<int>(result.code));
-                } });
-        }
-        catch (const std::exception &ex)
-        {
-            RCLCPP_ERROR(logger, "%s late goal cancellation could not be confirmed: %s", label.c_str(), ex.what());
-        }
-    }
-    /**
      * @brief 준비된 ROS 서비스에 요청을 보내고 최대 5초 동안 응답을 기다린다.
      * @tparam Service 호출할 ROS 서비스 자료형.
      * @param client 서비스 클라이언트.
@@ -455,43 +339,11 @@ private:
         auto pending = client->async_send_request(request);
         try
         {
-            return await(pending, 5., client->get_service_name());
+            return pick_place::ros_async::await(stopping_, pending, 5., client->get_service_name());
         }
         catch (...)
         {
             client->remove_pending_request(pending);
-            throw;
-        }
-    }
-
-    /// @brief MTC 해의 Action 통신을 기존 대기·취소 경로로 수행한다.
-    void executeMtcSolution(const ExecuteTask::Goal &goal)
-    {
-        auto handle = sendGoal(execute_, goal, 10., "MTC execute goal");
-        if (!handle)
-        {
-            throw std::runtime_error("MTC execution rejected");
-        }
-        try
-        {
-            auto result = await(execute_->async_get_result(handle), operation_timeout_, "MTC execution");
-            if (result.code != rclcpp_action::ResultCode::SUCCEEDED || result.result->error_code.val != 1)
-            {
-                throw std::runtime_error("MTC execution failed: " + std::to_string(result.result->error_code.val));
-            }
-        }
-        catch (...)
-        {
-            auto cancel = execute_->async_cancel_goal(handle);
-            try
-            {
-                await(cancel, 5., "MTC cancel");
-                await(execute_->async_get_result(handle), 10., "MTC terminal result");
-            }
-            catch (const std::exception &cleanup)
-            {
-                RCLCPP_ERROR(get_logger(), "MTC goal terminal state UNCONFIRMED after cancellation: %s", cleanup.what());
-            }
             throw;
         }
     }
@@ -510,7 +362,9 @@ private:
         move_ = rclcpp_action::create_client<MoveGroup>(this, "/move_action");
         arm_controller_ = rclcpp_action::create_client<FollowTrajectory>(this, "/arm_trajectory_controller/follow_joint_trajectory");
         gripper_controller_ = rclcpp_action::create_client<FollowTrajectory>(this, "/gripper_trajectory_controller/follow_joint_trajectory");
-        execute_ = rclcpp_action::create_client<ExecuteTask>(this, "/execute_task_solution");
+        // TODO: 콜백 제거 자체보다 각 클래스가 자기 책임을 직접 수행하도록 정리한다.
+        // TODO: Scene/Gazebo의 서비스 책임과 관측 조회 책임을 구분하고 진짜 공통 기능만 공유한다.
+        // TODO: 관절 도달 판정 등 긴 람다 본문은 이름 있는 관측 조회 메서드로 옮긴다.
         scene_manager_ = std::make_unique<pick_place::PlanningSceneManager>(
             [this](const moveit_msgs::srv::GetPlanningScene::Request::SharedPtr &request)
             { return call<moveit_msgs::srv::GetPlanningScene>(get_scene_, request); },
@@ -528,9 +382,8 @@ private:
                 return fresh(attached_received_) ? attached_ : std::nullopt;
             });
         mtc_executor_ = std::make_unique<pick_place::MtcTaskExecutor>(*this, stopping_,
-            planning_time_, velocity_, acceleration_,
+            planning_time_, velocity_, acceleration_, operation_timeout_,
             [this] { return scene_manager_->scene(); },
-            [this](const ExecuteTask::Goal &goal) { executeMtcSolution(goal); },
             [this](const std::map<std::string, double> &targets)
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -608,7 +461,7 @@ private:
      */
     std::string checkActionReadiness()
     {
-        if (!move_->action_server_is_ready() || !execute_->action_server_is_ready() ||
+        if (!move_->action_server_is_ready() || !mtc_executor_->isExecutionReady() ||
             !arm_controller_->action_server_is_ready() || !gripper_controller_->action_server_is_ready())
         {
             return "MoveIt action interfaces";
@@ -755,7 +608,7 @@ private:
         goal.planning_options.planning_scene_diff.is_diff = true;
         goal.planning_options.planning_scene_diff.robot_state.is_diff = true;
         // 2단계: MoveGroup Action에 닫기 goal을 보내고 승인되지 않으면 실패 처리한다.
-        auto handle = sendGoal(move_, goal, 10., "close acceptance");
+        auto handle = pick_place::ros_async::sendGoal(stopping_, get_logger(), move_, goal, 10., "close acceptance");
         if (!handle)
         {
             throw std::runtime_error("Gripper close rejected");
@@ -788,13 +641,13 @@ private:
             // 4단계: 접촉 뒤에도 goal이 진행 중이면 취소하고 최종 결과를 확인한다.
             if (result_future.wait_for(0ms) != std::future_status::ready)
             {
-                const auto cancel = await(move_->async_cancel_goal(handle), 5., "close cancellation");
+                const auto cancel = pick_place::ros_async::await(stopping_, move_->async_cancel_goal(handle), 5., "close cancellation");
                 if (cancel->goals_canceling.empty())
                 {
                     throw std::runtime_error("Close cancellation not accepted");
                 }
             }
-            const auto result = await(result_future, 10., "close terminal result");
+            const auto result = pick_place::ros_async::await(stopping_, result_future, 10., "close terminal result");
             if (result.code != rclcpp_action::ResultCode::SUCCEEDED && result.code != rclcpp_action::ResultCode::CANCELED)
             {
                 throw std::runtime_error("Close did not terminate successfully/canceled");
@@ -816,8 +669,8 @@ private:
             {
                 try
                 {
-                    await(move_->async_cancel_goal(handle), 5., "failed close cancel");
-                    await(result_future, 10., "failed close terminal");
+                    pick_place::ros_async::await(stopping_, move_->async_cancel_goal(handle), 5., "failed close cancel");
+                    pick_place::ros_async::await(stopping_, result_future, 10., "failed close terminal");
                 }
                 catch (const std::exception &cleanup)
                 {
@@ -1220,7 +1073,6 @@ private:
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr attach_, detach_;
     rclcpp_action::Client<FollowTrajectory>::SharedPtr arm_controller_, gripper_controller_;
     rclcpp_action::Client<MoveGroup>::SharedPtr move_;
-    rclcpp_action::Client<ExecuteTask>::SharedPtr execute_;
     std::unique_ptr<pick_place::PlanningSceneManager> scene_manager_;
     std::unique_ptr<pick_place::MtcTaskExecutor> mtc_executor_;
     std::unique_ptr<pick_place::GazeboManager> gazebo_manager_;

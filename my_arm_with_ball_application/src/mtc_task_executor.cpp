@@ -1,4 +1,5 @@
 #include "mtc_task_executor.hpp"
+#include "ros_async_operations.hpp"
 #include <algorithm>
 #include <chrono>
 #include <stdexcept>
@@ -29,14 +30,54 @@ double secondsSince(Clock::time_point time)
 }
 
 MtcTaskExecutor::MtcTaskExecutor(rclcpp::Node &node, std::atomic<bool> &stopping,
-    double planning_time, double velocity, double acceleration, Scene scene,
-    ExecuteSolution execute_solution, JointsReached joints_reached)
+    double planning_time, double velocity, double acceleration, double operation_timeout,
+    Scene scene, JointsReached joints_reached)
     : node_(node), stopping_(stopping), planning_time_(planning_time), velocity_(velocity),
-      acceleration_(acceleration), scene_(std::move(scene)),
-      execute_solution_(std::move(execute_solution)), joints_reached_(std::move(joints_reached))
+      acceleration_(acceleration), operation_timeout_(operation_timeout), scene_(std::move(scene)),
+      execute_(rclcpp_action::create_client<ExecuteTask>(&node, "/execute_task_solution")),
+      joints_reached_(std::move(joints_reached))
 {
 }
 
+bool MtcTaskExecutor::isExecutionReady() const
+{
+    return execute_->action_server_is_ready();
+}
+
+/// @brief MTC 해의 Action 통신을 기존 대기·취소 경로로 수행한다.
+void MtcTaskExecutor::executeMtcSolution(const ExecuteTask::Goal &goal)
+{
+    auto handle = ros_async::sendGoal(stopping_, node_.get_logger(), execute_, goal, 10., "MTC execute goal");
+    if (!handle)
+    {
+        throw std::runtime_error("MTC execution rejected");
+    }
+    try
+    {
+        auto result = ros_async::await(stopping_, execute_->async_get_result(handle), operation_timeout_, "MTC execution");
+        if (result.code != rclcpp_action::ResultCode::SUCCEEDED || result.result->error_code.val != 1)
+        {
+            throw std::runtime_error("MTC execution failed: " + std::to_string(result.result->error_code.val));
+        }
+    }
+    catch (...)
+    {
+        auto cancel = execute_->async_cancel_goal(handle);
+        try
+        {
+            ros_async::await(stopping_, cancel, 5., "MTC cancel");
+            ros_async::await(stopping_, execute_->async_get_result(handle), 10., "MTC terminal result");
+        }
+        catch (const std::exception &cleanup)
+        {
+            RCLCPP_ERROR(node_.get_logger(), "MTC goal terminal state UNCONFIRMED after cancellation: %s", cleanup.what());
+        }
+        throw;
+    }
+}
+
+
+// 진행 중인 MTC 경로 계획을 중단해 달라는 요청이다. 완료 대기 및 Action 취소는 별도 경로다.
 void MtcTaskExecutor::preempt()
 {
     std::lock_guard<std::mutex> lock(planning_mutex_);
@@ -218,7 +259,7 @@ void MtcTaskExecutor::executeTask(mtc::Task &task)
             targets[trajectory.joint_names[i]] = point.positions[i];
         }
     }
-    execute_solution_(goal);
+    executeMtcSolution(goal);
     if (targets.empty())
     {
         throw std::runtime_error("MTC solution contains no joint trajectory");

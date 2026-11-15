@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <moveit_msgs/msg/planning_scene.hpp>
 #include <moveit/task_constructor/task.h>
@@ -20,12 +21,14 @@ class MtcTaskExecutor
 {
 public:
     using Scene = std::function<moveit_msgs::msg::PlanningScene()>;
-    using ExecuteSolution = std::function<void(const moveit_task_constructor_msgs::action::ExecuteTaskSolution::Goal &)>;
     using JointsReached = std::function<bool(const std::map<std::string, double> &)>;
     MtcTaskExecutor(rclcpp::Node &node, std::atomic<bool> &stopping,
-        double planning_time, double velocity, double acceleration, Scene scene,
-        ExecuteSolution execute_solution, JointsReached joints_reached);
+        double planning_time, double velocity, double acceleration, double operation_timeout,
+        Scene scene, JointsReached joints_reached);
+    /// @brief 진행 중인 MTC 경로 계획을 중단해 달라고 요청한다.
+    /// @note 중단 완료를 기다리지 않으며 로봇 비상정지나 실행 중 Action 취소가 아니다.
     void preempt();
+    bool isExecutionReady() const;
     moveit::task_constructor::Stage *configureTask(moveit::task_constructor::Task &task, const std::string &label);
     moveit::task_constructor::Stage *addJointMove(moveit::task_constructor::Task &task,
         const std::string &label, const std::string &group,
@@ -36,11 +39,13 @@ public:
     void verifyJoints(const std::map<std::string, double> &targets);
 
 private:
+    using ExecuteTask = moveit_task_constructor_msgs::action::ExecuteTaskSolution;
+    void executeMtcSolution(const ExecuteTask::Goal &goal);
     rclcpp::Node &node_;
     std::atomic<bool> &stopping_;
-    double planning_time_, velocity_, acceleration_;
+    double planning_time_, velocity_, acceleration_, operation_timeout_;
     Scene scene_;
-    ExecuteSolution execute_solution_;
+    rclcpp_action::Client<ExecuteTask>::SharedPtr execute_;
     JointsReached joints_reached_;
     std::mutex planning_mutex_;
     moveit::task_constructor::Task *planning_task_{nullptr};
