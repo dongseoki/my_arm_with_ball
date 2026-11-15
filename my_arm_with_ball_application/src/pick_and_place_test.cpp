@@ -1581,7 +1581,7 @@ private:
      * @details 준비 확인 예외는 이유 문자열로 반환하고 다른 작업 예외는 Future로 전달한다.
      * @note 작업 시작은 tick()의 잠금 상태에서 수행하지만 작업 완료를 기다리지 않는다.
      */
-    void startStateWork(State selected)
+    void startAsyncStateWork(State selected)
     {
         work_ = std::async(std::launch::async, [this, selected]() -> std::string
                            {
@@ -1642,11 +1642,14 @@ private:
             }
         }
         const State selected = state_;
+        // processWorkResult()가 같은 tick 안에서 RETURN을 SUCCEEDED_WAITING으로 바꿀 수 있다.
+        // tick 시작 시 검사만으로는 이를 막지 못하므로 새 비동기 작업을 시작하기 전에 다시 확인한다.
         if (selected == State::SUCCEEDED_WAITING)
         {
             return;
         }
-        startStateWork(selected);
+        // 별도 스레드에서 오래 걸리는 작업 시작
+        startAsyncStateWork(selected);
     }
 
     std::mutex mutex_, planning_mutex_;
