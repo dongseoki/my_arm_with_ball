@@ -40,6 +40,7 @@
 #include <shape_msgs/msg/solid_primitive.hpp>
 #include "pick_and_place_test_node.hpp"
 #include "place_stability.hpp"
+#include "planning_scene_manager.hpp"
 
 using namespace std::chrono_literals;
 namespace mtc = moveit::task_constructor;
@@ -51,7 +52,6 @@ static const std::vector<std::string> ARM = {
     "shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
     "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"};
 static const std::vector<std::string> FINGERS = {"rg2_finger_joint1", "rg2_finger_joint2"};
-static const std::vector<std::string> TOUCH = {"rg2_hand", "rg2_leftfinger", "rg2_rightfinger"};
 
 class PickAndPlace : public rclcpp::Node
 {
@@ -111,19 +111,8 @@ private:
         SUCCEEDED_WAITING, ///< 작업을 성공적으로 마친 뒤 재실행 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
         FAILED_WAITING     ///< 작업 실패 원인을 기록한 뒤 자동 재시도나 복귀 없이 노드와 시뮬레이션을 유지하며 기다리는 상태를 의미한다.
     };
-    /// @brief Gazebo 관측 또는 MoveIt 장면에서 기대하는 공의 부착 상태.
-    enum class AttachmentState
-    {
-        Attached,
-        Detached
-    };
-    /// @brief MoveIt 장면에 반영할 변경. 물리적인 부착·분리 요청과는 구분한다.
-    enum class SceneUpdate
-    {
-        Attach,
-        Detach,
-        RefreshWorld
-    };
+    using AttachmentState = pick_place::PlanningSceneManager::AttachmentState;
+    using SceneUpdate = pick_place::PlanningSceneManager::SceneUpdate;
     /**
      * @brief 파라미터를 읽고 검증한 뒤 놓기 안정성 판정 객체를 준비한다.
      * @details 기존 기본값과 검증 순서를 유지하며 ROS 통신 인터페이스는 생성하지 않는다.
@@ -231,22 +220,7 @@ private:
                 }
             });
     }
-    /**
-     * @brief 컨트롤러·Planning Scene·Gazebo 서비스와 동작 Action 클라이언트를 생성한다.
-     * @note 클라이언트 생성만 수행하며 서버 준비 확인이나 작업 실행은 하지 않는다.
-     */
-    void createClients()
-    {
-        controllers_ = create_client<controller_manager_msgs::srv::ListControllers>("/controller_manager/list_controllers");
-        get_scene_ = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
-        apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
-        attach_ = create_client<std_srvs::srv::Trigger>("/grasp/attach");
-        detach_ = create_client<std_srvs::srv::Trigger>("/grasp/detach");
-        move_ = rclcpp_action::create_client<MoveGroup>(this, "/move_action");
-        arm_controller_ = rclcpp_action::create_client<FollowTrajectory>(this, "/arm_trajectory_controller/follow_joint_trajectory");
-        gripper_controller_ = rclcpp_action::create_client<FollowTrajectory>(this, "/gripper_trajectory_controller/follow_joint_trajectory");
-        execute_ = rclcpp_action::create_client<ExecuteTask>(this, "/execute_task_solution");
-    }
+
     /**
      * @brief ROS 파라미터를 읽고, 아직 선언되지 않았다면 기본값으로 선언한다.
      * @tparam T 파라미터 값의 자료형.
@@ -490,17 +464,27 @@ private:
             throw;
         }
     }
+
     /**
-     * @brief MoveIt에 로봇 상태와 변환 등을 포함한 현재 Planning Scene을 요청한다.
-     * @return 서비스에서 수신한 Planning Scene 사본.
-     * @throws std::runtime_error 장면 조회 서비스를 사용할 수 없거나 응답 대기에 실패한 경우.
+     * @brief 컨트롤러·Planning Scene·Gazebo 서비스와 동작 Action 클라이언트를 생성한다.
+     * @note 클라이언트 생성만 수행하며 서버 준비 확인이나 작업 실행은 하지 않는다.
      */
-    moveit_msgs::msg::PlanningScene scene()
+    void createClients()
     {
-        auto request = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
-        request->components.components = 1023;
-        // Complete live scene, including robot state and transforms.
-        return call<moveit_msgs::srv::GetPlanningScene>(get_scene_, request)->scene;
+        controllers_ = create_client<controller_manager_msgs::srv::ListControllers>("/controller_manager/list_controllers");
+        get_scene_ = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
+        apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
+        attach_ = create_client<std_srvs::srv::Trigger>("/grasp/attach");
+        detach_ = create_client<std_srvs::srv::Trigger>("/grasp/detach");
+        move_ = rclcpp_action::create_client<MoveGroup>(this, "/move_action");
+        arm_controller_ = rclcpp_action::create_client<FollowTrajectory>(this, "/arm_trajectory_controller/follow_joint_trajectory");
+        gripper_controller_ = rclcpp_action::create_client<FollowTrajectory>(this, "/gripper_trajectory_controller/follow_joint_trajectory");
+        execute_ = rclcpp_action::create_client<ExecuteTask>(this, "/execute_task_solution");
+        scene_manager_ = std::make_unique<pick_place::PlanningSceneManager>(
+            [this](const moveit_msgs::srv::GetPlanningScene::Request::SharedPtr &request)
+            { return call<moveit_msgs::srv::GetPlanningScene>(get_scene_, request); },
+            [this](const moveit_msgs::srv::ApplyPlanningScene::Request::SharedPtr &request)
+            { return call<moveit_msgs::srv::ApplyPlanningScene>(apply_scene_, request); });
     }
     /**
      * @brief 관측, Action·서비스 인터페이스, 컨트롤러와 작업 장면의 준비 상태를 확인한다.
@@ -613,7 +597,7 @@ private:
      */
     std::string checkSceneReadiness()
     {
-        auto current = scene();
+        auto current = scene_manager_->scene();
         for (const auto &id : {"apple", "basket"})
         {
             if (std::none_of(current.world.collision_objects.begin(), current.world.collision_objects.end(),
@@ -627,242 +611,24 @@ private:
         }
         return "";
     }
+
     /**
-     * @brief Planning Scene 변경 내용을 차이 메시지로 MoveIt에 적용한다.
-     * @param diff 적용할 변경 내용. 장면과 로봇 상태의 is_diff를 true로 설정해 전송한다.
-     * @throws std::runtime_error 서비스 호출에 실패하거나 MoveIt이 변경 내용을 거부한 경우.
-     */
-    void apply(moveit_msgs::msg::PlanningScene diff)
-    {
-        diff.is_diff = true;
-        diff.robot_state.is_diff = true;
-        auto request = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
-        request->scene = std::move(diff);
-        if (!call<moveit_msgs::srv::ApplyPlanningScene>(apply_scene_, request)->success)
-        {
-            throw std::runtime_error("Planning Scene rejected diff");
-        }
-    }
-    /**
-     * @brief 반지름 0.0325 m인 공의 충돌 물체 메시지를 만든다.
-     * @param pose frame 좌표계 기준 공의 중심 위치와 방향.
-     * @param frame 공의 pose를 표현한 좌표계 이름.
-     * @return ID가 apple이고 작업이 ADD인 구형 충돌 물체. 장면에는 아직 적용하지 않는다.
-     */
-    moveit_msgs::msg::CollisionObject sphere(const geometry_msgs::msg::Pose &pose, const std::string &frame)
-    {
-        moveit_msgs::msg::CollisionObject object;
-        object.header.frame_id = frame;
-        object.id = "apple";
-        object.operation = moveit_msgs::msg::CollisionObject::ADD;
-        shape_msgs::msg::SolidPrimitive shape;
-        shape.type = shape.SPHERE;
-        shape.dimensions = {.0325};
-        object.primitives.push_back(shape);
-        object.primitive_poses.push_back(pose);
-        return object;
-    }
-    /**
-     * @brief MoveIt Planning Scene에서 공과 TOUCH에 지정된 링크 사이의 충돌 허용 여부를 설정한다.
-     * @param allowed true이면 공과 해당 링크의 접촉을 허용하고, false이면 충돌 검사 대상으로 되돌린다.
-     * @details 현재 Allowed Collision Matrix를 조회하고 필요한 항목을 추가한 뒤 변경 내용을 적용한다.
-     *          공(apple)과 바닥(pick_area_floor) 사이의 충돌은 allowed 값과 관계없이 항상 허용한다.
-     *          MoveIt의 충돌 검사 규칙만 변경하며 Gazebo의 물리적 접촉이나 부착 상태는 변경하지 않는다.
-     * @throws std::runtime_error Planning Scene 조회 또는 변경 적용에 실패한 경우.
-     */
-    void setHandBallCollisionAllowed(bool allowed)
-    {
-        auto matrix = scene().allowed_collision_matrix;
-        auto names = TOUCH;
-        names.push_back("apple");
-        names.push_back("pick_area_floor");
-        for (const auto &name : names)
-        {
-            if (std::find(matrix.entry_names.begin(), matrix.entry_names.end(), name) == matrix.entry_names.end())
-            {
-                matrix.entry_names.push_back(name);
-                for (auto &entry : matrix.entry_values)
-                {
-                    entry.enabled.push_back(false);
-                }
-                moveit_msgs::msg::AllowedCollisionEntry entry;
-                entry.enabled.resize(matrix.entry_names.size(), false);
-                matrix.entry_values.push_back(entry);
-            }
-        }
-        auto index = [&matrix](const std::string &name)
-        {
-            return std::distance(matrix.entry_names.begin(), std::find(matrix.entry_names.begin(), matrix.entry_names.end(), name));
-        };
-        const auto apple = index("apple");
-        for (const auto &name : TOUCH)
-        {
-            matrix.entry_values[apple].enabled[index(name)] = allowed;
-            matrix.entry_values[index(name)].enabled[apple] = allowed;
-        }
-        matrix.entry_values[apple].enabled[index("pick_area_floor")] = true;
-        matrix.entry_values[index("pick_area_floor")].enabled[apple] = true;
-        moveit_msgs::msg::PlanningScene diff;
-        diff.allowed_collision_matrix = matrix;
-        apply(diff);
-    }
-    /**
-     * @brief Planning Scene의 공이 기대한 소속·형상·좌표계·위치로 등록됐는지 검증한다.
-     * @param attachment Attached이면 rg2_hand에 부착된 공 하나만, Detached이면 world 물체 목록의
-     *                 공 하나만 존재해야 한다.
-     * @param expected 비교 기준 공. header.frame_id와 primitive_poses[0]의 중심 위치를 사용한다.
-     * @details 장면 조회 → 공 수집 → 소속·개수 확인 → 형상·좌표계 확인 → 중심 위치 계산
-     *          → 위치 오차 확인의 6단계로 처리한다. 반지름은 0.0325 m를 기준으로 검사한다.
-     *          장면을 변경하거나 Gazebo의 실제 파지 상태를 확인하지는 않는다.
-     *          구의 중심 위치만 비교하며 공의 방향 일치 여부는 검사하지 않는다.
-     * @throws std::runtime_error 장면 조회에 실패하거나 공의 소속·개수·형상·좌표계가
-     *                            맞지 않거나 중심 위치 오차가 0.005 m를 초과한 경우.
-     */
-    void verifyScene(AttachmentState attachment, const moveit_msgs::msg::CollisionObject &expected)
-    {
-        const bool attached = attachment == AttachmentState::Attached;
-        // 1. MoveIt에서 현재 Planning Scene을 조회한다.
-        const auto current = scene();
-        // 2. 양쪽 목록의 apple 개수를 세고, 기대한 소속과 부착 링크에 맞는 공을 수집한다.
-        std::vector<moveit_msgs::msg::CollisionObject> objects;
-        size_t world_count = 0, attached_count = 0;
-        for (const auto &obj : current.world.collision_objects)
-        {
-            if (obj.id == "apple")
-            {
-                ++world_count;
-                if (!attached)
-                {
-                    objects.push_back(obj);
-                }
-            }
-        }
-        for (const auto &obj : current.robot_state.attached_collision_objects)
-        {
-            if (obj.object.id == "apple")
-            {
-                ++attached_count;
-                if (attached && obj.link_name == "rg2_hand")
-                {
-                    objects.push_back(obj.object);
-                }
-            }
-        }
-        // 3. 원하는 목록에 공이 정확히 하나 있고 반대쪽에는 없으며, 검증 후보도 하나인지 확인한다.
-        if (world_count != (attached ? 0u : 1u) || attached_count != (attached ? 1u : 0u) || objects.size() != 1)
-        {
-            throw std::runtime_error("Planning Scene world/attached membership mismatch");
-        }
-        // 4. 단일 구 형상, 반지름 0.0325 m(허용 오차 1e-6 m), 기대한 좌표계인지 확인한다.
-        const auto &obj = objects.front();
-        if (obj.primitives.size() != 1 || obj.primitive_poses.size() != 1 ||
-            obj.primitives[0].type != shape_msgs::msg::SolidPrimitive::SPHERE ||
-            obj.primitives[0].dimensions.size() != 1 || std::abs(obj.primitives[0].dimensions[0] - .0325) > 1e-6 ||
-            obj.header.frame_id != expected.header.frame_id)
-        {
-            throw std::runtime_error("Planning Scene sphere geometry mismatch");
-        }
-        // 5. 물체 원점의 위치·회전과 구의 로컬 중심을 합성해 header.frame_id 기준 중심을 계산한다.
-        // MoveIt이 primitive_poses를 물체 원점 쪽으로 재배치할 수 있어 로컬 위치만 비교하지 않는다.
-        const auto &origin = obj.pose;
-        Eigen::Quaterniond rotation(origin.orientation.w, origin.orientation.x,
-                                    origin.orientation.y, origin.orientation.z);
-        if (rotation.norm() < 1e-9)
-        {
-            rotation = Eigen::Quaterniond::Identity();
-        }
-        else
-        {
-            rotation.normalize();
-        }
-        const auto &local = obj.primitive_poses[0].position;
-        const Eigen::Vector3d actual = Eigen::Vector3d(origin.position.x, origin.position.y,
-                                                       origin.position.z) +
-                                       rotation * Eigen::Vector3d(local.x, local.y, local.z);
-        // 6. 기대한 중심과의 거리 오차가 0.005 m(5 mm)를 초과하면 검증 실패로 처리한다.
-        const auto &b = expected.primitive_poses[0].position;
-        if ((actual - Eigen::Vector3d(b.x, b.y, b.z)).norm() > .005)
-        {
-            throw std::runtime_error("Planning Scene ball pose mismatch: actual=" +
-                                     std::to_string(actual.x()) + "," + std::to_string(actual.y()) + "," +
-                                     std::to_string(actual.z()) + " expected=" + std::to_string(b.x) + "," +
-                                     std::to_string(b.y) + "," + std::to_string(b.z));
-        }
-    }
-    /**
-     * @brief Gazebo에서 측정한 공의 위치·자세를 MoveIt Planning Scene에 반영하고 검증한다.
-     * @param update Attach는 손에 부착, Detach는 부착 정보 제거 후 world 등록,
-     *               RefreshWorld는 부착 정보 제거 없이 world 물체 갱신을 수행한다.
-     * @details 측정 → 부착 여부에 따른 변경 내용 구성 → 적용 → 검증의 4단계로 처리한다.
-     *          Gazebo의 실제 부착·분리는 수행하지 않고 MoveIt의 충돌 물체 정보만 동기화한다.
-     * @throws std::runtime_error 측정값 또는 공의 자세가 유효하지 않거나,
-     *                            Planning Scene 적용·검증에 실패한 경우.
+     * @brief 최신 공 관측과 필요 시 손 변환을 전달하고 MoveIt 장면 반영을 위임한다.
+     * @note 공 관측 → Attach에서 모델 로드·관절 관측 → 적용·검증 순서를 유지한다.
      */
     void syncScene(SceneUpdate update)
     {
-        const bool attached = update == SceneUpdate::Attach;
-        // 1. 공의 현재 위치·자세를 읽고 변경 메시지와 검증 기준을 준비한다.
         const auto measured_ball = ball();
-        moveit_msgs::msg::PlanningScene diff;
-        moveit_msgs::msg::CollisionObject expected;
-        // 2. 부착 여부에 맞게 Planning Scene에 반영할 변경 내용을 구성한다.
-        if (attached)
+        scene_manager_->syncScene(update, measured_ball, [this]() -> Eigen::Isometry3d
         {
-            // 현재 관절값으로 손의 world 기준 위치·자세를 계산한다.
             mtc::Task model_task;
             model_task.loadRobotModel(shared_from_this());
             moveit::core::RobotState state(model_task.getRobotModel());
             state.setToDefaultValues();
             state.setVariablePositions(measured());
             state.update();
-            const auto &hand = state.getGlobalLinkTransform("rg2_hand");
-            const auto &p = measured_ball.pose;
-            Eigen::Quaterniond orientation(p.orientation.w, p.orientation.x, p.orientation.y, p.orientation.z);
-            if (!orientation.coeffs().allFinite() || orientation.norm() < 1e-9)
-            {
-                throw std::runtime_error("Invalid ball quaternion");
-            }
-            Eigen::Isometry3d world_ball = Eigen::Isometry3d::Identity();
-            world_ball.linear() = orientation.normalized().toRotationMatrix();
-            world_ball.translation() = Eigen::Vector3d(p.position.x, p.position.y, p.position.z);
-            // world 기준 공의 위치·자세를 rg2_hand 기준으로 변환한다.
-            const auto relative = hand.inverse() * world_ball;
-            geometry_msgs::msg::Pose local;
-            local.position.x = relative.translation().x();
-            local.position.y = relative.translation().y();
-            local.position.z = relative.translation().z();
-            Eigen::Quaterniond q(relative.rotation());
-            local.orientation.x = q.x();
-            local.orientation.y = q.y();
-            local.orientation.z = q.z();
-            local.orientation.w = q.w();
-            // 변환한 공을 손에 부착된 충돌 물체로 등록한다.
-            expected = sphere(local, "rg2_hand");
-            moveit_msgs::msg::AttachedCollisionObject object;
-            object.link_name = "rg2_hand";
-            object.touch_links = TOUCH;
-            object.object = expected;
-            diff.robot_state.attached_collision_objects.push_back(object);
-        }
-        else
-        {
-            // 일반 분리에서는 부착 정보를 제거하고, 단순 갱신에서는 제거를 생략한다.
-            if (update == SceneUpdate::Detach)
-            {
-                moveit_msgs::msg::AttachedCollisionObject object;
-                object.link_name = "rg2_hand";
-                object.object.id = "apple";
-                object.object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
-                diff.robot_state.attached_collision_objects.push_back(object);
-            }
-            // 측정한 공을 world 기준의 독립 충돌 물체로 등록한다.
-            expected = sphere(measured_ball.pose, "world");
-            diff.world.collision_objects.push_back(expected);
-        }
-        // 3. 준비한 변경 내용을 MoveIt Planning Scene에 적용한다.
-        apply(diff);
-        // 4. 공의 world/attached 소속·개수, 구 형상·반지름, 좌표계·위치를 검증한다.
-        verifyScene(attached ? AttachmentState::Attached : AttachmentState::Detached, expected);
+            return state.getGlobalLinkTransform("rg2_hand");
+        });
     }
     /**
      * @brief Gazebo의 최신 공 부착 상태가 기대값과 일치하는지 검사한다.
@@ -1065,7 +831,7 @@ private:
         task.setProperty("eef", "ur5_rg2_eef");
         task.setProperty("ik_frame", "rg2_hand");
         auto current = std::make_shared<planning_scene::PlanningScene>(task.getRobotModel());
-        current->setPlanningSceneMsg(scene());
+        current->setPlanningSceneMsg(scene_manager_->scene());
         auto fixed = std::make_unique<mtc::stages::FixedState>("measured current scene");
         fixed->setState(current);
         auto *start = fixed.get();
@@ -1168,7 +934,7 @@ private:
      */
     void approach()
     {
-        setHandBallCollisionAllowed(true);
+        scene_manager_->setHandBallCollisionAllowed(true);
         mtc::Task task;
         configureTask(task, "stage5 approach");
         addJointMove(task, "open fingers", "gripper", FINGERS, {1.18, 1.18});
@@ -1400,7 +1166,7 @@ private:
         addPoseMove(task, "retreat", retreat_, start);
         addJointMove(task, "return start", "ur5", ARM, start_);
         executeTask(task);
-        setHandBallCollisionAllowed(false);
+        scene_manager_->setHandBallCollisionAllowed(false);
     }
     /**
      * @brief 현재 실행 상태를 로그에 사용할 이름으로 변환한다.
@@ -1680,31 +1446,14 @@ private:
     rclcpp_action::Client<FollowTrajectory>::SharedPtr arm_controller_, gripper_controller_;
     rclcpp_action::Client<MoveGroup>::SharedPtr move_;
     rclcpp_action::Client<ExecuteTask>::SharedPtr execute_;
+    std::unique_ptr<pick_place::PlanningSceneManager> scene_manager_;
     rclcpp::TimerBase::SharedPtr timer_;
 };
 
 /**
- * @brief ROS를 초기화하고 Pick-and-Place 노드를 MultiThreadedExecutor로 실행한다.
- * @param argc 명령행 인자 개수.
- * @param argv ROS 인자를 포함한 명령행 인자 배열.
- * @return 정상 종료 시 0, 노드 생성 또는 실행 중 표준 예외가 발생하면 1.
+ * @brief 실행 진입점에서 사용할 Pick-and-Place 노드를 생성한다.
  */
-int main(int argc, char **argv)
+rclcpp::Node::SharedPtr createPickAndPlaceNode()
 {
-    rclcpp::init(argc, argv);
-    try
-    {
-        auto node = std::make_shared<PickAndPlace>();
-        rclcpp::executors::MultiThreadedExecutor executor;
-        executor.add_node(node);
-        executor.spin();
-    }
-    catch (const std::exception &ex)
-    {
-        RCLCPP_ERROR(rclcpp::get_logger("pick_and_place_test"), "%s", ex.what());
-        rclcpp::shutdown();
-        return 1;
-    }
-    rclcpp::shutdown();
-    return 0;
+    return std::make_shared<PickAndPlace>();
 }
